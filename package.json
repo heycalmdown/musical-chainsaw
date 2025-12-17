@@ -6,7 +6,9 @@
   },
   "scripts": {
     "bbsd": "tsx src/bbsd.ts",
-    "bbs": "tsx src/bbs.ts"
+    "bbs": "tsx src/bbs.ts",
+    "bbsd2": "tsx src2/bbsd.ts",
+    "bbs2": "tsx src2/bbs.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
