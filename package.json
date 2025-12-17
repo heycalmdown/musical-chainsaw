@@ -1,0 +1,16 @@
+{
+  "name": "test-bbs",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "bbsd": "tsx src/bbsd.ts",
+    "bbs": "tsx src/bbs.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
