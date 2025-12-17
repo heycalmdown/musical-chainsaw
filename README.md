@@ -2,6 +2,10 @@
 
 SSH 로그인 시 bash 대신 실행되는 클래식 BBS 스타일 TUI + daemon(`bbsd`) MVP.
 
+구조:
+- `bbs`: **thin client**(터미널 렌더링/입력 전송만)
+- `bbsd`: 세션 상태 머신 + 화면 생성(Server‑Driven UI, `ui.hello`/`ui.event`)
+
 ## 요구사항
 
 - Node.js **v22+** (`node:sqlite` 사용, Node 20 미지원)

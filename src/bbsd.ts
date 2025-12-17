@@ -5,6 +5,7 @@ import { DEFAULT_DB_PATH, DEFAULT_SOCKET_PATH, resolvePath } from "./config";
 import { BbsDb } from "./db";
 import { encodeJsonLine, safeJsonParse, splitJsonLines } from "./ipc/jsonl";
 import type { IpcError, IpcRequest, IpcResponse } from "./ipc/types";
+import { BbsUiSession } from "./ui/session";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -58,6 +59,35 @@ function parseRequest(value: unknown): { ok: true; req: IpcRequest } | { ok: fal
 
   const payload = value.payload;
   if (!isRecord(payload)) return { ok: false, id, message: "Missing object 'payload'" };
+
+  if (type === "ui.hello") {
+    const user = payload.user;
+    const rows = payload.rows;
+    const cols = payload.cols;
+    const pageSize = payload.pageSize;
+
+    if (typeof user !== "string" || user.trim().length === 0) return { ok: false, id, message: "payload.user must be a non-empty string" };
+    if (!isFiniteNumber(rows) || rows <= 0) return { ok: false, id, message: "payload.rows must be a positive number" };
+    if (!isFiniteNumber(cols) || cols <= 0) return { ok: false, id, message: "payload.cols must be a positive number" };
+    if (typeof pageSize !== "undefined") {
+      if (!isFiniteNumber(pageSize) || pageSize < 1 || pageSize > 100)
+        return { ok: false, id, message: "payload.pageSize must be 1..100" };
+    }
+
+    return { ok: true, req: { id, type, payload: { user, rows, cols, pageSize } } };
+  }
+
+  if (type === "ui.event") {
+    const input = payload.input;
+    const rows = payload.rows;
+    const cols = payload.cols;
+
+    if (typeof input !== "string") return { ok: false, id, message: "payload.input must be a string" };
+    if (!isFiniteNumber(rows) || rows <= 0) return { ok: false, id, message: "payload.rows must be a positive number" };
+    if (!isFiniteNumber(cols) || cols <= 0) return { ok: false, id, message: "payload.cols must be a positive number" };
+
+    return { ok: true, req: { id, type, payload: { input, rows, cols } } };
+  }
 
   if (type === "listBoards") return { ok: true, req: { id, type, payload: {} } };
 
@@ -137,6 +167,8 @@ function main() {
 
   const server = net.createServer((socketConn) => {
     socketConn.setEncoding("utf8");
+    const uiSession = new BbsUiSession(bbsDb);
+    let uiHelloReceived = false;
 
     let buffer = "";
     socketConn.on("data", (chunk) => {
@@ -162,6 +194,23 @@ function main() {
 
         try {
           const req = reqParsed.req;
+          if (req.type === "ui.hello") {
+            uiHelloReceived = true;
+            const screen = uiSession.handleHello(req.payload);
+            send(socketConn, { id: req.id, ok: true, payload: { screen } });
+            continue;
+          }
+
+          if (req.type === "ui.event") {
+            if (!uiHelloReceived) {
+              send(socketConn, badRequest(req.id, "Call ui.hello first"));
+              continue;
+            }
+            const screen = uiSession.handleEvent(req.payload);
+            send(socketConn, { id: req.id, ok: true, payload: { screen } });
+            continue;
+          }
+
           if (req.type === "listBoards") {
             send(socketConn, { id: req.id, ok: true, payload: { boards: bbsDb.listBoards() } });
             continue;
