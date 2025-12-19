@@ -1,5 +1,5 @@
 import type { Board, Post, PostSummary } from "../domain";
-import type { ScreenModel, UiEventPayload, UiHelloPayload } from "../ipc/types";
+import type { ScreenModel } from "../protocol";
 import type { BbsDb } from "../db";
 
 type TerminalContext = {
@@ -38,6 +38,10 @@ function formatDate(iso: string): string {
   return iso.replace("T", " ").replace("Z", "");
 }
 
+function sanitizePlainText(value: string): string {
+  return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x1b]/g, "");
+}
+
 function wrapLine(line: string, width: number): string[] {
   if (width <= 0) return [line];
   if (line.length <= width) return [line];
@@ -53,7 +57,8 @@ function wrapLine(line: string, width: number): string[] {
 }
 
 function wrapText(text: string, width: number): string[] {
-  const lines = text.split(/\r?\n/);
+  const safeText = sanitizePlainText(text).replace(/\r\n/g, "\n");
+  const lines = safeText.split("\n");
   return lines.flatMap((line) => wrapLine(line, width));
 }
 
@@ -71,7 +76,7 @@ export class BbsUiSession {
 
   constructor(private readonly db: BbsDb) {}
 
-  handleHello(payload: UiHelloPayload): ScreenModel {
+  handleHello(payload: { user: string; rows?: number; cols?: number; pageSize?: number }): ScreenModel {
     this.ctx = normalizeTerminalContext({
       user: payload.user,
       rows: payload.rows,
@@ -84,15 +89,7 @@ export class BbsUiSession {
     return this.render();
   }
 
-  handleEvent(payload: UiEventPayload): ScreenModel {
-    this.ctx = normalizeTerminalContext({
-      user: this.ctx.user,
-      rows: payload.rows,
-      cols: payload.cols,
-      postsPageSize: this.ctx.postsPageSize,
-    });
-
-    const inputRaw = payload.input;
+  handleEvent(inputRaw: string): ScreenModel {
     const inputTrimmed = inputRaw.trim();
 
     if (this.mode.kind === "boards") {
@@ -264,50 +261,59 @@ export class BbsUiSession {
   }
 
   render(): ScreenModel {
-    if (this.mode.kind === "boards") return this.renderBoards();
-    if (this.mode.kind === "posts") return this.renderPosts();
-    if (this.mode.kind === "post") return this.renderPost();
-    if (this.mode.kind === "writeTitle") return this.renderWriteTitle();
-    return this.renderWriteBody();
+    switch (this.mode.kind) {
+      case "boards":
+        return this.renderBoards(this.mode);
+      case "posts":
+        return this.renderPosts(this.mode);
+      case "post":
+        return this.renderPost(this.mode);
+      case "writeTitle":
+        return this.renderWriteTitle(this.mode);
+      case "writeBody":
+        return this.renderWriteBody(this.mode);
+    }
   }
 
-  private renderBoards(): ScreenModel {
+  private renderBoards(mode: ModeBoards): ScreenModel {
     const lines: string[] = [];
-    lines.push(`user=${this.ctx.user}`);
+    lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
     lines.push("Select a board:");
     lines.push("");
 
-    for (let i = 0; i < this.mode.boards.length; i++) {
-      lines.push(`${i + 1}) ${this.mode.boards[i]!.name}`);
+    for (let i = 0; i < mode.boards.length; i++) {
+      lines.push(`${i + 1}) ${sanitizePlainText(mode.boards[i]!.name)}`);
     }
     lines.push("0) Exit");
 
     return this.screen({
-      title: "SSH BBS (Main Menu)",
+      title: "test-bbs (Main Menu)",
       lines,
       prompt: "> ",
       inputMode: "line",
     });
   }
 
-  private renderPosts(): ScreenModel {
+  private renderPosts(mode: ModePosts): ScreenModel {
     const lines: string[] = [];
-    lines.push(`user=${this.ctx.user}`);
+    lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Board: ${this.mode.board.name}] Page ${this.mode.page}`);
+    lines.push(`[Board: ${sanitizePlainText(mode.board.name)}] Page ${mode.page}`);
     lines.push("");
 
-    if (this.mode.posts.length === 0) {
+    if (mode.posts.length === 0) {
       lines.push("(no posts)");
     } else {
-      for (const post of this.mode.posts) {
-        lines.push(`${post.id}\t${post.title}\t(${post.author}, ${formatDate(post.createdAt)})`);
+      for (const post of mode.posts) {
+        lines.push(
+          `${post.id}\t${sanitizePlainText(post.title)}\t(${sanitizePlainText(post.author)}, ${formatDate(post.createdAt)})`,
+        );
       }
     }
 
     return this.screen({
-      title: "SSH BBS",
+      title: "test-bbs",
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -315,40 +321,40 @@ export class BbsUiSession {
     });
   }
 
-  private renderPost(): ScreenModel {
+  private renderPost(mode: ModePost): ScreenModel {
     const rows = this.ctx.rows;
     const cols = this.ctx.cols;
 
     const overhead = 9;
     const bodyHeight = Math.max(rows - overhead, 5);
-    const wrappedBody = wrapText(this.mode.post.body, cols);
+    const wrappedBody = wrapText(mode.post.body, cols);
     const pages = chunk(wrappedBody, bodyHeight);
     const totalPages = pages.length;
 
-    let page = this.mode.page;
+    let page = mode.page;
     if (page < 1) page = 1;
     if (page > totalPages) page = totalPages;
 
-    if (page !== this.mode.page) {
-      this.mode = { ...this.mode, page };
+    if (page !== mode.page) {
+      this.mode = { ...mode, page };
       this.toast = "End of post.";
     }
 
     const pageIndex = Math.max(0, page - 1);
 
     const lines: string[] = [];
-    lines.push(`user=${this.ctx.user}`);
+    lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Board: ${this.mode.board.name}] Post #${this.mode.post.id} (${page}/${totalPages})`);
-    lines.push(`Title: ${this.mode.post.title}`);
-    lines.push(`Author: ${this.mode.post.author}`);
-    lines.push(`Date: ${formatDate(this.mode.post.createdAt)}`);
+    lines.push(`[Board: ${sanitizePlainText(mode.board.name)}] Post #${mode.post.id} (${page}/${totalPages})`);
+    lines.push(`Title: ${sanitizePlainText(mode.post.title)}`);
+    lines.push(`Author: ${sanitizePlainText(mode.post.author)}`);
+    lines.push(`Date: ${formatDate(mode.post.createdAt)}`);
     lines.push("-".repeat(Math.min(cols, 80)));
     for (const line of pages[pageIndex] ?? []) lines.push(line);
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "SSH BBS",
+      title: "test-bbs",
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -356,23 +362,23 @@ export class BbsUiSession {
     });
   }
 
-  private renderWriteTitle(): ScreenModel {
+  private renderWriteTitle(mode: ModeWriteTitle): ScreenModel {
     const lines: string[] = [];
-    lines.push(`user=${this.ctx.user}`);
+    lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Board: ${this.mode.board.name}] Write Post`);
+    lines.push(`[Board: ${sanitizePlainText(mode.board.name)}] Write Post`);
     lines.push("");
     lines.push("Enter title (0 to cancel):");
 
     return this.screen({
-      title: "SSH BBS",
+      title: "test-bbs",
       lines,
       prompt: "> ",
       inputMode: "line",
     });
   }
 
-  private renderWriteBody(): ScreenModel {
+  private renderWriteBody(mode: ModeWriteBody): ScreenModel {
     const rows = this.ctx.rows;
     const cols = this.ctx.cols;
 
@@ -380,27 +386,26 @@ export class BbsUiSession {
     const previewHeight = Math.max(rows - overhead, 5);
 
     const lines: string[] = [];
-    lines.push(`user=${this.ctx.user}`);
+    lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Board: ${this.mode.board.name}] Write Post`);
-    lines.push(`Title: ${this.mode.title}`);
+    lines.push(`[Board: ${sanitizePlainText(mode.board.name)}] Write Post`);
+    lines.push(`Title: ${sanitizePlainText(mode.title)}`);
     lines.push("");
     lines.push("Enter body. '.' on its own line to finish. '0' to cancel.");
     lines.push("-".repeat(Math.min(cols, 80)));
 
-    const preview = this.mode.lines.slice(-previewHeight);
+    const preview = mode.lines.slice(-previewHeight);
     for (const line of preview) {
-      for (const wrapped of wrapLine(line, cols)) lines.push(wrapped);
+      for (const wrapped of wrapLine(sanitizePlainText(line), cols)) lines.push(wrapped);
     }
 
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "SSH BBS",
+      title: "test-bbs",
       lines,
       prompt: "> ",
       inputMode: "multiline",
     });
   }
 }
-

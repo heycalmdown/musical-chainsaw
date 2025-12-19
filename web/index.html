@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>test-bbs</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">test-bbs</div>
+        <div class="controls">
+          <label class="field">
+            <span class="label">닉네임</span>
+            <input id="nickname" class="input" type="text" maxlength="20" autocomplete="off" />
+          </label>
+          <button id="connect" class="button">접속</button>
+          <button id="disconnect" class="button button-secondary" disabled>종료</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="terminal-card">
+          <div id="terminal" class="terminal"></div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
