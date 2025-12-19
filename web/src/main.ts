@@ -225,10 +225,9 @@ async function main(): Promise<void> {
   });
 
   setConnected(false);
-  term.writeln("서버를 먼저 실행하세요: npm run dev:server");
-  term.writeln("웹 실행: npm run dev:web");
-  term.writeln("");
-  term.writeln("터미널을 클릭해서 포커스 후 입력하세요.");
+  nicknameInput.focus();
+  term.writeln("닉네임을 입력하고 [접속] 버튼을 누르세요.");
+  term.writeln("접속 후 터미널을 클릭해서 포커스 후 입력하세요.");
 }
 
 void main();
