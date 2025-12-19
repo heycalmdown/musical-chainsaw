@@ -204,7 +204,9 @@ async function main(): Promise<void> {
       if (ch === "\u007f" || ch === "\b") {
         if (draft.length === 0) continue;
         draft = draft.slice(0, -1);
-        term.write("\b \b");
+        term.write("\r\x1b[2K");
+        term.write(currentPrompt);
+        term.write(draft);
         continue;
       }
 
