@@ -1,0 +1,23 @@
+{
+  "name": "bbs",
+  "version": "0.1.0",
+  "bin": {
+    "gateway": "bin/cdk.js"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "cdk:ddb": "cdk --profile k-faas deploy BbsDdb"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152",
+    "@types/node": "^24.5.2",
+    "aws-cdk-lib": "^2.215.0",
+    "esbuild": "^0.25.10",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "es-toolkit": "^1.44.0",
+    "source-map-support": "^0.5.21"
+  }
+}
