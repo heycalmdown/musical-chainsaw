@@ -1,4 +1,10 @@
-import type { Board, Conference, ConferenceMenuItem, Post, PostSummary } from "../domain";
+import type {
+  Board,
+  Conference,
+  ConferenceMenuItem,
+  Post,
+  PostSummary,
+} from "../domain";
 import type { ScreenModel } from "../protocol";
 import type { BbsDb } from "../db";
 
@@ -9,17 +15,55 @@ type TerminalContext = {
   postsPageSize: number;
 };
 
-type ModeConferenceManage = { kind: "conferenceManage"; conferences: Conference[] };
+type PostsPageState = {
+  page: number;
+  pageCursors: Array<string | null>;
+  nextCursor: string | null;
+};
+
+type ModeConferenceManage = {
+  kind: "conferenceManage";
+  conferences: Conference[];
+};
 type ModeConferenceAdd = { kind: "conferenceAdd" };
-type ModeConferenceRename = { kind: "conferenceRename"; conference: Conference };
+type ModeConferenceRename = {
+  kind: "conferenceRename";
+  conference: Conference;
+};
 type ModeWelcome = { kind: "welcome"; conference: Conference };
-type ModeWelcomeEditTitle = { kind: "welcomeEditTitle"; conference: Conference };
-type ModeWelcomeEditBody = { kind: "welcomeEditBody"; conference: Conference; title: string; lines: string[] };
-type ModeMenu = { kind: "menu"; conference: Conference; items: ConferenceMenuItem[] };
+type ModeWelcomeEditTitle = {
+  kind: "welcomeEditTitle";
+  conference: Conference;
+};
+type ModeWelcomeEditBody = {
+  kind: "welcomeEditBody";
+  conference: Conference;
+  title: string;
+  lines: string[];
+};
+type ModeMenu = {
+  kind: "menu";
+  conference: Conference;
+  items: ConferenceMenuItem[];
+};
 type ModeMenuDesignTitle = { kind: "menuDesignTitle"; conference: Conference };
-type ModeMenuDesignBody = { kind: "menuDesignBody"; conference: Conference; title: string; lines: string[] };
-type ModeMenuEdit = { kind: "menuEdit"; conference: Conference; items: ConferenceMenuItem[] };
-type ModeMenuEditLabel = { kind: "menuEditLabel"; conference: Conference; items: ConferenceMenuItem[]; item: ConferenceMenuItem };
+type ModeMenuDesignBody = {
+  kind: "menuDesignBody";
+  conference: Conference;
+  title: string;
+  lines: string[];
+};
+type ModeMenuEdit = {
+  kind: "menuEdit";
+  conference: Conference;
+  items: ConferenceMenuItem[];
+};
+type ModeMenuEditLabel = {
+  kind: "menuEditLabel";
+  conference: Conference;
+  items: ConferenceMenuItem[];
+  item: ConferenceMenuItem;
+};
 type ModeMenuEditDisplayNo = {
   kind: "menuEditDisplayNo";
   conference: Conference;
@@ -46,7 +90,12 @@ type ModeMenuEditConferenceSelect = {
   item: ConferenceMenuItem;
   conferences: Conference[];
 };
-type ModeMenuEditLink = { kind: "menuEditLink"; conference: Conference; items: ConferenceMenuItem[]; item: ConferenceMenuItem };
+type ModeMenuEditLink = {
+  kind: "menuEditLink";
+  conference: Conference;
+  items: ConferenceMenuItem[];
+  item: ConferenceMenuItem;
+};
 type ModeMenuEditPageTitle = {
   kind: "menuEditPageTitle";
   conference: Conference;
@@ -61,7 +110,11 @@ type ModeMenuEditPageBody = {
   title: string;
   lines: string[];
 };
-type ModeMenuAddType = { kind: "menuAddType"; conference: Conference; items: ConferenceMenuItem[] };
+type ModeMenuAddType = {
+  kind: "menuAddType";
+  conference: Conference;
+  items: ConferenceMenuItem[];
+};
 type ModeMenuAddLabel = {
   kind: "menuAddLabel";
   conference: Conference;
@@ -82,7 +135,12 @@ type ModeMenuAddConferenceSelect = {
   label: string;
   conferences: Conference[];
 };
-type ModeMenuAddPageTitle = { kind: "menuAddPageTitle"; conference: Conference; items: ConferenceMenuItem[]; label: string };
+type ModeMenuAddPageTitle = {
+  kind: "menuAddPageTitle";
+  conference: Conference;
+  items: ConferenceMenuItem[];
+  label: string;
+};
 type ModeMenuAddPageBody = {
   kind: "menuAddPageBody";
   conference: Conference;
@@ -91,30 +149,63 @@ type ModeMenuAddPageBody = {
   title: string;
   lines: string[];
 };
-type ModeMenuAddLink = { kind: "menuAddLink"; conference: Conference; items: ConferenceMenuItem[]; label: string };
-type ModeBoardManage = { kind: "boardManage"; conference: Conference; boards: Board[] };
+type ModeMenuAddLink = {
+  kind: "menuAddLink";
+  conference: Conference;
+  items: ConferenceMenuItem[];
+  label: string;
+};
+type ModeBoardManage = {
+  kind: "boardManage";
+  conference: Conference;
+  boards: Board[];
+};
 type ModeBoardAdd = { kind: "boardAdd"; conference: Conference };
-type ModeBoardRename = { kind: "boardRename"; conference: Conference; board: Board };
-type ModePosts = { kind: "posts"; conference: Conference; board: Board; page: number; posts: PostSummary[] };
+type ModeBoardRename = {
+  kind: "boardRename";
+  conference: Conference;
+  board: Board;
+};
+type ModePosts = {
+  kind: "posts";
+  conference: Conference;
+  board: Board;
+  posts: PostSummary[];
+  pageState: PostsPageState;
+};
 type ModePost = {
   kind: "post";
   conference: Conference;
   board: Board;
-  postsReturnPage: number;
+  postsPageState: PostsPageState;
   post: Post;
   page: number;
 };
-type ModeWriteTitle = { kind: "writeTitle"; conference: Conference; board: Board; postsReturnPage: number };
+type ModeWriteTitle = {
+  kind: "writeTitle";
+  conference: Conference;
+  board: Board;
+  postsPageState: PostsPageState;
+};
 type ModeWriteBody = {
   kind: "writeBody";
   conference: Conference;
   board: Board;
-  postsReturnPage: number;
+  postsPageState: PostsPageState;
   title: string;
   lines: string[];
 };
-type ModePage = { kind: "page"; conference: Conference; item: ConferenceMenuItem; page: number };
-type ModeLink = { kind: "link"; conference: Conference; item: ConferenceMenuItem };
+type ModePage = {
+  kind: "page";
+  conference: Conference;
+  item: ConferenceMenuItem;
+  page: number;
+};
+type ModeLink = {
+  kind: "link";
+  conference: Conference;
+  item: ConferenceMenuItem;
+};
 
 type Mode =
   | ModeConferenceManage
@@ -156,12 +247,24 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
-function normalizeTerminalContext(input: Partial<TerminalContext>): TerminalContext {
-  const user = typeof input.user === "string" && input.user.trim().length > 0 ? input.user.trim() : "anonymous";
-  const rows = typeof input.rows === "number" && Number.isFinite(input.rows) ? clampInt(input.rows, 10, 200) : 24;
-  const cols = typeof input.cols === "number" && Number.isFinite(input.cols) ? clampInt(input.cols, 20, 240) : 80;
+function normalizeTerminalContext(
+  input: Partial<TerminalContext>,
+): TerminalContext {
+  const user =
+    typeof input.user === "string" && input.user.trim().length > 0
+      ? input.user.trim()
+      : "anonymous";
+  const rows =
+    typeof input.rows === "number" && Number.isFinite(input.rows)
+      ? clampInt(input.rows, 10, 200)
+      : 24;
+  const cols =
+    typeof input.cols === "number" && Number.isFinite(input.cols)
+      ? clampInt(input.cols, 20, 240)
+      : 80;
   const postsPageSize =
-    typeof input.postsPageSize === "number" && Number.isFinite(input.postsPageSize)
+    typeof input.postsPageSize === "number" &&
+    Number.isFinite(input.postsPageSize)
       ? clampInt(input.postsPageSize, 1, 50)
       : 10;
 
@@ -205,25 +308,25 @@ function splitPlainLines(text: string): string[] {
 function chunk<T>(items: T[], size: number): T[][] {
   if (size <= 0) return [items];
   const pages: T[][] = [];
-  for (let i = 0; i < items.length; i += size) pages.push(items.slice(i, i + size));
+  for (let i = 0; i < items.length; i += size)
+    pages.push(items.slice(i, i + size));
   return pages.length ? pages : [[]];
-}
-
-function nextSortOrder(items: ConferenceMenuItem[]): number {
-  let max = 0;
-  for (const item of items) max = Math.max(max, item.sortOrder);
-  return max + 1;
 }
 
 export class BbsUiSession {
   private ctx: TerminalContext = normalizeTerminalContext({});
   private mode: Mode = { kind: "conferenceManage", conferences: [] };
   private toast: string | undefined;
-  private rootConferenceId: number | null = null;
+  private rootConferenceId: string | null = null;
 
   constructor(private readonly db: BbsDb) {}
 
-  handleHello(payload: { user: string; rows?: number; cols?: number; pageSize?: number }): ScreenModel {
+  async handleHello(payload: {
+    user: string;
+    rows?: number;
+    cols?: number;
+    pageSize?: number;
+  }): Promise<ScreenModel> {
     this.ctx = normalizeTerminalContext({
       user: payload.user,
       rows: payload.rows,
@@ -231,18 +334,18 @@ export class BbsUiSession {
       postsPageSize: payload.pageSize,
     });
 
-    const root = this.db.getRootConference();
+    const root = await this.db.getRootConference();
     if (root) {
       this.rootConferenceId = root.id;
       this.mode = { kind: "welcome", conference: root };
     } else {
-      const conferences = this.db.listConferences();
+      const conferences = await this.db.listConferences();
       this.mode = { kind: "conferenceManage", conferences };
     }
     return this.render();
   }
 
-  handleEvent(inputRaw: string): ScreenModel {
+  async handleEvent(inputRaw: string): Promise<ScreenModel> {
     const inputTrimmed = inputRaw.trim();
     const cmd = inputTrimmed.toUpperCase();
     const exitSession = () =>
@@ -253,8 +356,8 @@ export class BbsUiSession {
         inputMode: "line",
         actions: [{ type: "exit" }],
       });
-    const openMenu = (conference: Conference) => {
-      const items = this.db.listMenuItems(conference.id);
+    const openMenu = async (conference: Conference) => {
+      const items = await this.db.listMenuItems(conference.id);
       this.mode = { kind: "menu", conference, items };
       return this.render();
     };
@@ -262,14 +365,14 @@ export class BbsUiSession {
       this.mode = { kind: "welcome", conference };
       return this.render();
     };
-    const openRootMenu = () => {
-      const root = this.db.getRootConference();
+    const openRootMenu = async () => {
+      const root = await this.db.getRootConference();
       if (!root) return exitSession();
       this.rootConferenceId = root.id;
-      return openMenu(root);
+      return await openMenu(root);
     };
-    const openMenuEdit = (conference: Conference) => {
-      const items = this.db.listMenuItems(conference.id);
+    const openMenuEdit = async (conference: Conference) => {
+      const items = await this.db.listMenuItems(conference.id);
       this.mode = { kind: "menuEdit", conference, items };
       return this.render();
     };
@@ -277,20 +380,20 @@ export class BbsUiSession {
       this.mode = { kind: "menuDesignTitle", conference };
       return this.render();
     };
-    const openBoardManage = (conference: Conference) => {
-      const boards = this.db.listBoards(conference.id);
+    const openBoardManage = async (conference: Conference) => {
+      const boards = await this.db.listBoards(conference.id);
       this.mode = { kind: "boardManage", conference, boards };
       return this.render();
     };
-    const openConferenceManage = () => {
-      const conferences = this.db.listConferences();
+    const openConferenceManage = async () => {
+      const conferences = await this.db.listConferences();
       this.mode = { kind: "conferenceManage", conferences };
       return this.render();
     };
 
     if (this.mode.kind === "conferenceManage") {
       if (cmd === "0") {
-        return openRootMenu();
+        return await openRootMenu();
       }
       if (cmd === "A") {
         this.mode = { kind: "conferenceAdd" };
@@ -300,7 +403,11 @@ export class BbsUiSession {
       const renameMatch = /^R\s+(\d+)$/i.exec(inputTrimmed);
       if (renameMatch) {
         const index = Number(renameMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.conferences.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.conferences.length
+        ) {
           this.toast = "Invalid conference number.";
           return this.render();
         }
@@ -312,15 +419,23 @@ export class BbsUiSession {
       const deleteMatch = /^D\s+(\d+)$/i.exec(inputTrimmed);
       if (deleteMatch) {
         const index = Number(deleteMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.conferences.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.conferences.length
+        ) {
           this.toast = "Invalid conference number.";
           return this.render();
         }
         const conference = this.mode.conferences[index - 1]!;
-        const deleted = this.db.deleteConference({ conferenceId: conference.id });
-        const conferences = this.db.listConferences();
+        const deleted = await this.db.deleteConference({
+          conferenceId: conference.id,
+        });
+        const conferences = await this.db.listConferences();
         this.mode = { kind: "conferenceManage", conferences };
-        this.toast = deleted ? "Conference deleted." : "Unable to delete conference.";
+        this.toast = deleted
+          ? "Conference deleted."
+          : "Unable to delete conference.";
         return this.render();
       }
 
@@ -330,7 +445,7 @@ export class BbsUiSession {
 
     if (this.mode.kind === "conferenceAdd") {
       if (inputTrimmed === "0") {
-        return openConferenceManage();
+        return await openConferenceManage();
       }
 
       const name = inputTrimmed;
@@ -343,8 +458,8 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.createConference({ name, updatedBy: this.ctx.user });
-      const conferences = this.db.listConferences();
+      await this.db.createConference({ name, updatedBy: this.ctx.user });
+      const conferences = await this.db.listConferences();
       this.mode = { kind: "conferenceManage", conferences };
       this.toast = "Conference created.";
       return this.render();
@@ -352,7 +467,7 @@ export class BbsUiSession {
 
     if (this.mode.kind === "conferenceRename") {
       if (inputTrimmed === "0") {
-        return openConferenceManage();
+        return await openConferenceManage();
       }
 
       const name = inputTrimmed;
@@ -365,8 +480,12 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.renameConference({ conferenceId: this.mode.conference.id, name, updatedBy: this.ctx.user });
-      const conferences = this.db.listConferences();
+      await this.db.renameConference({
+        conferenceId: this.mode.conference.id,
+        name,
+        updatedBy: this.ctx.user,
+      });
+      const conferences = await this.db.listConferences();
       this.mode = { kind: "conferenceManage", conferences };
       this.toast = "Conference renamed.";
       return this.render();
@@ -374,11 +493,14 @@ export class BbsUiSession {
 
     if (this.mode.kind === "welcome") {
       if (cmd === "E") {
-        this.mode = { kind: "welcomeEditTitle", conference: this.mode.conference };
+        this.mode = {
+          kind: "welcomeEditTitle",
+          conference: this.mode.conference,
+        };
         return this.render();
       }
 
-      return openMenu(this.mode.conference);
+      return await openMenu(this.mode.conference);
     }
 
     if (this.mode.kind === "welcomeEditTitle") {
@@ -397,7 +519,12 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.mode = { kind: "welcomeEditBody", conference: this.mode.conference, title, lines: [] };
+      this.mode = {
+        kind: "welcomeEditBody",
+        conference: this.mode.conference,
+        title,
+        lines: [],
+      };
       return this.render();
     }
 
@@ -409,14 +536,16 @@ export class BbsUiSession {
 
       if (inputTrimmed === ".") {
         const body = this.mode.lines.join("\n").trimEnd();
-        this.db.updateConferenceWelcome({
+        await this.db.updateConferenceWelcome({
           conferenceId: this.mode.conference.id,
           title: this.mode.title,
           body,
           updatedBy: this.ctx.user,
         });
 
-        const conference = this.db.getConference(this.mode.conference.id) ?? this.mode.conference;
+        const conference =
+          (await this.db.getConference(this.mode.conference.id)) ??
+          this.mode.conference;
         this.mode = { kind: "welcome", conference };
         this.toast = "Welcome updated.";
         return this.render();
@@ -428,7 +557,7 @@ export class BbsUiSession {
 
     if (this.mode.kind === "menuDesignTitle") {
       if (inputTrimmed === "0") {
-        return openMenu(this.mode.conference);
+        return await openMenu(this.mode.conference);
       }
 
       const title = inputTrimmed;
@@ -437,27 +566,34 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.mode = { kind: "menuDesignBody", conference: this.mode.conference, title, lines: [] };
+      this.mode = {
+        kind: "menuDesignBody",
+        conference: this.mode.conference,
+        title,
+        lines: [],
+      };
       return this.render();
     }
 
     if (this.mode.kind === "menuDesignBody") {
       if (inputTrimmed === "0") {
-        return openMenu(this.mode.conference);
+        return await openMenu(this.mode.conference);
       }
 
       if (inputTrimmed === ".") {
         const body = this.mode.lines.join("\n").trimEnd();
-        this.db.updateConferenceMenu({
+        await this.db.updateConferenceMenu({
           conferenceId: this.mode.conference.id,
           title: this.mode.title,
           body,
           updatedBy: this.ctx.user,
         });
 
-        const conference = this.db.getConference(this.mode.conference.id) ?? this.mode.conference;
+        const conference =
+          (await this.db.getConference(this.mode.conference.id)) ??
+          this.mode.conference;
         this.toast = "Menu updated.";
-        return openMenu(conference);
+        return await openMenu(conference);
       }
 
       this.mode.lines.push(inputRaw);
@@ -469,7 +605,7 @@ export class BbsUiSession {
         if (this.mode.conference.isRoot) {
           return exitSession();
         }
-        return openRootMenu();
+        return await openRootMenu();
       }
 
       if (cmd === "E") {
@@ -477,37 +613,61 @@ export class BbsUiSession {
       }
 
       if (cmd === "I") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const selected = Number(inputTrimmed);
       const allItems = this.mode.items;
-      if (!Number.isFinite(selected) || selected < 1 || selected > allItems.length) {
+      if (
+        !Number.isFinite(selected) ||
+        selected < 1 ||
+        selected > allItems.length
+      ) {
         this.toast = "Select a menu number.";
         return this.render();
       }
 
       const item = allItems[selected - 1]!;
       if (item.actionType === "board") {
-        const boardId = Number(item.actionRef);
-        if (!Number.isFinite(boardId) || boardId < 1) {
+        const boardId = item.actionRef.trim();
+        if (!boardId) {
           this.toast = "Menu item has invalid board.";
           return this.render();
         }
-        const board = this.db.getBoard(boardId);
+        const board = await this.db.getBoard(this.mode.conference.id, boardId);
         if (!board || board.conferenceId !== this.mode.conference.id) {
           this.toast = "Board not found for this conference.";
           return this.render();
         }
 
-        const page = 1;
-        const posts = this.db.listPosts(board.id, page, this.ctx.postsPageSize);
-        this.mode = { kind: "posts", conference: this.mode.conference, board, page, posts };
+        const { posts, nextCursor } = await this.db.listPosts({
+          conferenceId: this.mode.conference.id,
+          boardId: board.id,
+          pageSize: this.ctx.postsPageSize,
+          cursor: null,
+        });
+        const pageState: PostsPageState = {
+          page: 1,
+          pageCursors: [null],
+          nextCursor,
+        };
+        this.mode = {
+          kind: "posts",
+          conference: this.mode.conference,
+          board,
+          posts,
+          pageState,
+        };
         return this.render();
       }
 
       if (item.actionType === "page") {
-        this.mode = { kind: "page", conference: this.mode.conference, item, page: 1 };
+        this.mode = {
+          kind: "page",
+          conference: this.mode.conference,
+          item,
+          page: 1,
+        };
         return this.render();
       }
 
@@ -517,12 +677,12 @@ export class BbsUiSession {
       }
 
       if (item.actionType === "conference") {
-        const conferenceId = Number(item.actionRef);
-        if (!Number.isFinite(conferenceId) || conferenceId < 1) {
+        const conferenceId = item.actionRef.trim();
+        if (!conferenceId) {
           this.toast = "Menu item has invalid conference.";
           return this.render();
         }
-        const conference = this.db.getConference(conferenceId);
+        const conference = await this.db.getConference(conferenceId);
         if (!conference || conference.isRoot) {
           this.toast = "Conference not found.";
           return this.render();
@@ -536,11 +696,15 @@ export class BbsUiSession {
 
     if (this.mode.kind === "menuEdit") {
       if (cmd === "0") {
-        return openMenu(this.mode.conference);
+        return await openMenu(this.mode.conference);
       }
 
       if (cmd === "A") {
-        this.mode = { kind: "menuAddType", conference: this.mode.conference, items: this.mode.items };
+        this.mode = {
+          kind: "menuAddType",
+          conference: this.mode.conference,
+          items: this.mode.items,
+        };
         return this.render();
       }
 
@@ -549,7 +713,7 @@ export class BbsUiSession {
           this.toast = "Boards are not available for root.";
           return this.render();
         }
-        return openBoardManage(this.mode.conference);
+        return await openBoardManage(this.mode.conference);
       }
 
       if (cmd === "C") {
@@ -557,126 +721,143 @@ export class BbsUiSession {
           this.toast = "Conference management is only available in root.";
           return this.render();
         }
-        return openConferenceManage();
+        return await openConferenceManage();
       }
 
       const deleteMatch = /^D\s+(\d+)$/i.exec(inputTrimmed);
       if (deleteMatch) {
         const index = Number(deleteMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.items.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.items.length
+        ) {
           this.toast = "Invalid item number.";
           return this.render();
         }
         const item = this.mode.items[index - 1]!;
-        this.db.deleteMenuItem({ conferenceId: this.mode.conference.id, menuItemId: item.id });
+        await this.db.deleteMenuItem({
+          conferenceId: this.mode.conference.id,
+          menuItemId: item.id,
+        });
         this.toast = "Menu item deleted.";
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const hideMatch = /^H\s+(\d+)$/i.exec(inputTrimmed);
       if (hideMatch) {
         const index = Number(hideMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.items.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.items.length
+        ) {
           this.toast = "Invalid item number.";
           return this.render();
         }
         const item = this.mode.items[index - 1]!;
-        this.db.setMenuItemHidden({
+        await this.db.setMenuItemHidden({
           conferenceId: this.mode.conference.id,
           menuItemId: item.id,
           hidden: !item.hidden,
           updatedBy: this.ctx.user,
         });
         this.toast = item.hidden ? "Menu item shown." : "Menu item hidden.";
-        return openMenuEdit(this.mode.conference);
-      }
-
-      const moveMatch = /^M\s+(\d+)\s+(\d+)$/i.exec(inputTrimmed);
-      if (moveMatch) {
-        const from = Number(moveMatch[1]);
-        const to = Number(moveMatch[2]);
-        if (
-          !Number.isFinite(from) ||
-          !Number.isFinite(to) ||
-          from < 1 ||
-          to < 1 ||
-          from > this.mode.items.length ||
-          to > this.mode.items.length
-        ) {
-          this.toast = "Usage: M <from> <to>";
-          return this.render();
-        }
-
-        if (from !== to) {
-          const reordered = [...this.mode.items];
-          const [moved] = reordered.splice(from - 1, 1);
-          reordered.splice(to - 1, 0, moved!);
-          this.db.setMenuItemOrder({
-            conferenceId: this.mode.conference.id,
-            orderedIds: reordered.map((item) => item.id),
-            updatedBy: this.ctx.user,
-          });
-        }
-
-        this.toast = "Menu order updated.";
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const labelMatch = /^L\s+(\d+)$/i.exec(inputTrimmed);
       if (labelMatch) {
         const index = Number(labelMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.items.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.items.length
+        ) {
           this.toast = "Invalid item number.";
           return this.render();
         }
         const item = this.mode.items[index - 1]!;
-        this.mode = { kind: "menuEditLabel", conference: this.mode.conference, items: this.mode.items, item };
+        this.mode = {
+          kind: "menuEditLabel",
+          conference: this.mode.conference,
+          items: this.mode.items,
+          item,
+        };
         return this.render();
       }
 
       const displayNoMatch = /^N\s+(\d+)$/i.exec(inputTrimmed);
       if (displayNoMatch) {
         const index = Number(displayNoMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.items.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.items.length
+        ) {
           this.toast = "Invalid item number.";
           return this.render();
         }
         const item = this.mode.items[index - 1]!;
-        this.mode = { kind: "menuEditDisplayNo", conference: this.mode.conference, items: this.mode.items, item };
+        this.mode = {
+          kind: "menuEditDisplayNo",
+          conference: this.mode.conference,
+          items: this.mode.items,
+          item,
+        };
         return this.render();
       }
 
       const displayTypeMatch = /^Y\s+(\d+)$/i.exec(inputTrimmed);
       if (displayTypeMatch) {
         const index = Number(displayTypeMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.items.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.items.length
+        ) {
           this.toast = "Invalid item number.";
           return this.render();
         }
         const item = this.mode.items[index - 1]!;
-        this.mode = { kind: "menuEditDisplayType", conference: this.mode.conference, items: this.mode.items, item };
+        this.mode = {
+          kind: "menuEditDisplayType",
+          conference: this.mode.conference,
+          items: this.mode.items,
+          item,
+        };
         return this.render();
       }
 
       const updateMatch = /^U\s+(\d+)$/i.exec(inputTrimmed);
       if (updateMatch) {
         const index = Number(updateMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.items.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.items.length
+        ) {
           this.toast = "Invalid item number.";
           return this.render();
         }
         const item = this.mode.items[index - 1]!;
         if (item.actionType === "board") {
-          const boards = this.db.listBoards(this.mode.conference.id);
+          const boards = await this.db.listBoards(this.mode.conference.id);
           if (boards.length === 0) {
             this.toast = "No boards available.";
             return this.render();
           }
-          this.mode = { kind: "menuEditBoardSelect", conference: this.mode.conference, items: this.mode.items, item, boards };
+          this.mode = {
+            kind: "menuEditBoardSelect",
+            conference: this.mode.conference,
+            items: this.mode.items,
+            item,
+            boards,
+          };
           return this.render();
         }
         if (item.actionType === "conference") {
-          const conferences = this.db.listConferences();
+          const conferences = await this.db.listConferences();
           if (conferences.length === 0) {
             this.toast = "No conferences available.";
             return this.render();
@@ -691,22 +872,32 @@ export class BbsUiSession {
           return this.render();
         }
         if (item.actionType === "link") {
-          this.mode = { kind: "menuEditLink", conference: this.mode.conference, items: this.mode.items, item };
+          this.mode = {
+            kind: "menuEditLink",
+            conference: this.mode.conference,
+            items: this.mode.items,
+            item,
+          };
           return this.render();
         }
         if (item.actionType === "page") {
-          this.mode = { kind: "menuEditPageTitle", conference: this.mode.conference, items: this.mode.items, item };
+          this.mode = {
+            kind: "menuEditPageTitle",
+            conference: this.mode.conference,
+            items: this.mode.items,
+            item,
+          };
           return this.render();
         }
       }
 
-      this.toast = "Commands: A, L <n>, N <n>, Y <n>, U <n>, H <n>, D <n>, M <from> <to>, 0";
+      this.toast = "Commands: A, L <n>, N <n>, Y <n>, U <n>, H <n>, D <n>, 0";
       return this.render();
     }
 
     if (this.mode.kind === "menuEditLabel") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const label = inputTrimmed;
@@ -719,7 +910,7 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.updateMenuItemMeta({
+      await this.db.updateMenuItemMeta({
         conferenceId: this.mode.conference.id,
         menuItemId: this.mode.item.id,
         label,
@@ -728,12 +919,12 @@ export class BbsUiSession {
         updatedBy: this.ctx.user,
       });
       this.toast = "Menu label updated.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuEditDisplayNo") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const displayNo = inputTrimmed;
@@ -742,7 +933,7 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.updateMenuItemMeta({
+      await this.db.updateMenuItemMeta({
         conferenceId: this.mode.conference.id,
         menuItemId: this.mode.item.id,
         label: this.mode.item.label,
@@ -751,12 +942,12 @@ export class BbsUiSession {
         updatedBy: this.ctx.user,
       });
       this.toast = "Display number updated.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuEditDisplayType") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const displayType = inputTrimmed;
@@ -765,7 +956,7 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.updateMenuItemMeta({
+      await this.db.updateMenuItemMeta({
         conferenceId: this.mode.conference.id,
         menuItemId: this.mode.item.id,
         label: this.mode.item.label,
@@ -774,22 +965,26 @@ export class BbsUiSession {
         updatedBy: this.ctx.user,
       });
       this.toast = "Display type updated.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuEditBoardSelect") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const selected = Number(inputTrimmed);
-      if (!Number.isFinite(selected) || selected < 1 || selected > this.mode.boards.length) {
+      if (
+        !Number.isFinite(selected) ||
+        selected < 1 ||
+        selected > this.mode.boards.length
+      ) {
         this.toast = "Select a board number.";
         return this.render();
       }
 
       const board = this.mode.boards[selected - 1]!;
-      this.db.updateMenuItemContent({
+      await this.db.updateMenuItemContent({
         conferenceId: this.mode.conference.id,
         menuItemId: this.mode.item.id,
         actionRef: String(board.id),
@@ -797,35 +992,39 @@ export class BbsUiSession {
         updatedBy: this.ctx.user,
       });
       this.toast = "Menu target updated.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuEditConferenceSelect") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const selected = Number(inputTrimmed);
-      if (!Number.isFinite(selected) || selected < 1 || selected > this.mode.conferences.length) {
+      if (
+        !Number.isFinite(selected) ||
+        selected < 1 ||
+        selected > this.mode.conferences.length
+      ) {
         this.toast = "Select a conference number.";
         return this.render();
       }
 
       const conference = this.mode.conferences[selected - 1]!;
-      this.db.updateMenuItemContent({
+      await this.db.updateMenuItemContent({
         conferenceId: this.mode.conference.id,
         menuItemId: this.mode.item.id,
-        actionRef: String(conference.id),
+        actionRef: conference.id,
         body: this.mode.item.body,
         updatedBy: this.ctx.user,
       });
       this.toast = "Menu target updated.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuEditLink") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const url = inputTrimmed;
@@ -838,7 +1037,7 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.updateMenuItemContent({
+      await this.db.updateMenuItemContent({
         conferenceId: this.mode.conference.id,
         menuItemId: this.mode.item.id,
         actionRef: url,
@@ -846,12 +1045,12 @@ export class BbsUiSession {
         updatedBy: this.ctx.user,
       });
       this.toast = "Menu link updated.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuEditPageTitle") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const title = inputTrimmed;
@@ -877,12 +1076,12 @@ export class BbsUiSession {
 
     if (this.mode.kind === "menuEditPageBody") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       if (inputTrimmed === ".") {
         const body = this.mode.lines.join("\n").trimEnd();
-        this.db.updateMenuItemContent({
+        await this.db.updateMenuItemContent({
           conferenceId: this.mode.conference.id,
           menuItemId: this.mode.item.id,
           actionRef: this.mode.title,
@@ -890,7 +1089,7 @@ export class BbsUiSession {
           updatedBy: this.ctx.user,
         });
         this.toast = "Menu page updated.";
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       this.mode.lines.push(inputRaw);
@@ -899,13 +1098,24 @@ export class BbsUiSession {
 
     if (this.mode.kind === "menuAddType") {
       if (cmd === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       if (cmd === "B" || cmd === "P" || cmd === "L" || cmd === "C") {
         const actionType =
-          cmd === "B" ? "board" : cmd === "P" ? "page" : cmd === "L" ? "link" : "conference";
-        this.mode = { kind: "menuAddLabel", conference: this.mode.conference, items: this.mode.items, actionType };
+          cmd === "B"
+            ? "board"
+            : cmd === "P"
+              ? "page"
+              : cmd === "L"
+                ? "link"
+                : "conference";
+        this.mode = {
+          kind: "menuAddLabel",
+          conference: this.mode.conference,
+          items: this.mode.items,
+          actionType,
+        };
         return this.render();
       }
 
@@ -915,8 +1125,12 @@ export class BbsUiSession {
 
     if (this.mode.kind === "menuAddLabel") {
       if (inputTrimmed === "0") {
-        const items = this.db.listMenuItems(this.mode.conference.id);
-        this.mode = { kind: "menuEdit", conference: this.mode.conference, items };
+        const items = await this.db.listMenuItems(this.mode.conference.id);
+        this.mode = {
+          kind: "menuEdit",
+          conference: this.mode.conference,
+          items,
+        };
         return this.render();
       }
 
@@ -931,20 +1145,26 @@ export class BbsUiSession {
       }
 
       if (this.mode.actionType === "board") {
-        const boards = this.db.listBoards(this.mode.conference.id);
+        const boards = await this.db.listBoards(this.mode.conference.id);
         if (boards.length === 0) {
           this.toast = "No boards available.";
-          return openMenuEdit(this.mode.conference);
+          return await openMenuEdit(this.mode.conference);
         }
-        this.mode = { kind: "menuAddBoardSelect", conference: this.mode.conference, items: this.mode.items, label, boards };
+        this.mode = {
+          kind: "menuAddBoardSelect",
+          conference: this.mode.conference,
+          items: this.mode.items,
+          label,
+          boards,
+        };
         return this.render();
       }
 
       if (this.mode.actionType === "conference") {
-        const conferences = this.db.listConferences();
+        const conferences = await this.db.listConferences();
         if (conferences.length === 0) {
           this.toast = "No conferences available.";
-          return openMenuEdit(this.mode.conference);
+          return await openMenuEdit(this.mode.conference);
         }
         this.mode = {
           kind: "menuAddConferenceSelect",
@@ -957,29 +1177,41 @@ export class BbsUiSession {
       }
 
       if (this.mode.actionType === "page") {
-        this.mode = { kind: "menuAddPageTitle", conference: this.mode.conference, items: this.mode.items, label };
+        this.mode = {
+          kind: "menuAddPageTitle",
+          conference: this.mode.conference,
+          items: this.mode.items,
+          label,
+        };
         return this.render();
       }
 
-      this.mode = { kind: "menuAddLink", conference: this.mode.conference, items: this.mode.items, label };
+      this.mode = {
+        kind: "menuAddLink",
+        conference: this.mode.conference,
+        items: this.mode.items,
+        label,
+      };
       return this.render();
     }
 
     if (this.mode.kind === "menuAddBoardSelect") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const selected = Number(inputTrimmed);
-      if (!Number.isFinite(selected) || selected < 1 || selected > this.mode.boards.length) {
+      if (
+        !Number.isFinite(selected) ||
+        selected < 1 ||
+        selected > this.mode.boards.length
+      ) {
         this.toast = "Select a board number.";
         return this.render();
       }
 
       const board = this.mode.boards[selected - 1]!;
-      const existingItems = this.db.listMenuItems(this.mode.conference.id);
-      const sortOrder = nextSortOrder(existingItems);
-      this.db.createMenuItem({
+      await this.db.createMenuItem({
         conferenceId: this.mode.conference.id,
         label: this.mode.label,
         displayNo: "",
@@ -987,49 +1219,49 @@ export class BbsUiSession {
         actionType: "board",
         actionRef: String(board.id),
         body: "",
-        sortOrder,
         hidden: false,
         updatedBy: this.ctx.user,
       });
 
       this.toast = "Menu item added.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuAddConferenceSelect") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const selected = Number(inputTrimmed);
-      if (!Number.isFinite(selected) || selected < 1 || selected > this.mode.conferences.length) {
+      if (
+        !Number.isFinite(selected) ||
+        selected < 1 ||
+        selected > this.mode.conferences.length
+      ) {
         this.toast = "Select a conference number.";
         return this.render();
       }
 
       const conference = this.mode.conferences[selected - 1]!;
-      const existingItems = this.db.listMenuItems(this.mode.conference.id);
-      const sortOrder = nextSortOrder(existingItems);
-      this.db.createMenuItem({
+      await this.db.createMenuItem({
         conferenceId: this.mode.conference.id,
         label: this.mode.label,
         displayNo: "",
         displayType: "",
         actionType: "conference",
-        actionRef: String(conference.id),
+        actionRef: conference.id,
         body: "",
-        sortOrder,
         hidden: false,
         updatedBy: this.ctx.user,
       });
 
       this.toast = "Menu item added.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "menuAddPageTitle") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const title = inputTrimmed;
@@ -1055,14 +1287,12 @@ export class BbsUiSession {
 
     if (this.mode.kind === "menuAddPageBody") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       if (inputTrimmed === ".") {
         const body = this.mode.lines.join("\n").trimEnd();
-        const existingItems = this.db.listMenuItems(this.mode.conference.id);
-        const sortOrder = nextSortOrder(existingItems);
-        this.db.createMenuItem({
+        await this.db.createMenuItem({
           conferenceId: this.mode.conference.id,
           label: this.mode.label,
           displayNo: "",
@@ -1070,13 +1300,12 @@ export class BbsUiSession {
           actionType: "page",
           actionRef: this.mode.title,
           body,
-          sortOrder,
           hidden: false,
           updatedBy: this.ctx.user,
         });
 
         this.toast = "Menu page added.";
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       this.mode.lines.push(inputRaw);
@@ -1085,7 +1314,7 @@ export class BbsUiSession {
 
     if (this.mode.kind === "menuAddLink") {
       if (inputTrimmed === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       const url = inputTrimmed;
@@ -1098,9 +1327,7 @@ export class BbsUiSession {
         return this.render();
       }
 
-      const existingItems = this.db.listMenuItems(this.mode.conference.id);
-      const sortOrder = nextSortOrder(existingItems);
-      this.db.createMenuItem({
+      await this.db.createMenuItem({
         conferenceId: this.mode.conference.id,
         label: this.mode.label,
         displayNo: "",
@@ -1108,18 +1335,17 @@ export class BbsUiSession {
         actionType: "link",
         actionRef: url,
         body: "",
-        sortOrder,
         hidden: false,
         updatedBy: this.ctx.user,
       });
 
       this.toast = "Menu link added.";
-      return openMenuEdit(this.mode.conference);
+      return await openMenuEdit(this.mode.conference);
     }
 
     if (this.mode.kind === "boardManage") {
       if (cmd === "0") {
-        return openMenuEdit(this.mode.conference);
+        return await openMenuEdit(this.mode.conference);
       }
 
       if (cmd === "A") {
@@ -1130,26 +1356,45 @@ export class BbsUiSession {
       const renameMatch = /^R\s+(\d+)$/i.exec(inputTrimmed);
       if (renameMatch) {
         const index = Number(renameMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.boards.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.boards.length
+        ) {
           this.toast = "Invalid board number.";
           return this.render();
         }
         const board = this.mode.boards[index - 1]!;
-        this.mode = { kind: "boardRename", conference: this.mode.conference, board };
+        this.mode = {
+          kind: "boardRename",
+          conference: this.mode.conference,
+          board,
+        };
         return this.render();
       }
 
       const deleteMatch = /^D\s+(\d+)$/i.exec(inputTrimmed);
       if (deleteMatch) {
         const index = Number(deleteMatch[1]);
-        if (!Number.isFinite(index) || index < 1 || index > this.mode.boards.length) {
+        if (
+          !Number.isFinite(index) ||
+          index < 1 ||
+          index > this.mode.boards.length
+        ) {
           this.toast = "Invalid board number.";
           return this.render();
         }
         const board = this.mode.boards[index - 1]!;
-        this.db.deleteBoard({ conferenceId: this.mode.conference.id, boardId: board.id });
-        const boards = this.db.listBoards(this.mode.conference.id);
-        this.mode = { kind: "boardManage", conference: this.mode.conference, boards };
+        await this.db.deleteBoard({
+          conferenceId: this.mode.conference.id,
+          boardId: board.id,
+        });
+        const boards = await this.db.listBoards(this.mode.conference.id);
+        this.mode = {
+          kind: "boardManage",
+          conference: this.mode.conference,
+          boards,
+        };
         this.toast = "Board deleted.";
         return this.render();
       }
@@ -1160,7 +1405,7 @@ export class BbsUiSession {
 
     if (this.mode.kind === "boardAdd") {
       if (inputTrimmed === "0") {
-        return openBoardManage(this.mode.conference);
+        return await openBoardManage(this.mode.conference);
       }
 
       const name = inputTrimmed;
@@ -1173,16 +1418,23 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.createBoard({ conferenceId: this.mode.conference.id, name });
-      const boards = this.db.listBoards(this.mode.conference.id);
-      this.mode = { kind: "boardManage", conference: this.mode.conference, boards };
+      await this.db.createBoard({
+        conferenceId: this.mode.conference.id,
+        name,
+      });
+      const boards = await this.db.listBoards(this.mode.conference.id);
+      this.mode = {
+        kind: "boardManage",
+        conference: this.mode.conference,
+        boards,
+      };
       this.toast = "Board added.";
       return this.render();
     }
 
     if (this.mode.kind === "boardRename") {
       if (inputTrimmed === "0") {
-        return openBoardManage(this.mode.conference);
+        return await openBoardManage(this.mode.conference);
       }
 
       const name = inputTrimmed;
@@ -1195,37 +1447,69 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.db.renameBoard({ conferenceId: this.mode.conference.id, boardId: this.mode.board.id, name });
-      const boards = this.db.listBoards(this.mode.conference.id);
-      this.mode = { kind: "boardManage", conference: this.mode.conference, boards };
+      await this.db.renameBoard({
+        conferenceId: this.mode.conference.id,
+        boardId: this.mode.board.id,
+        name,
+      });
+      const boards = await this.db.listBoards(this.mode.conference.id);
+      this.mode = {
+        kind: "boardManage",
+        conference: this.mode.conference,
+        boards,
+      };
       this.toast = "Board renamed.";
       return this.render();
     }
 
     if (this.mode.kind === "posts") {
       if (cmd === "0") {
-        return openMenu(this.mode.conference);
+        return await openMenu(this.mode.conference);
       }
 
       if (cmd === "N") {
-        const nextPage = this.mode.page + 1;
-        const posts = this.db.listPosts(this.mode.board.id, nextPage, this.ctx.postsPageSize);
-        if (posts.length === 0) {
+        const cursor = this.mode.pageState.nextCursor;
+        if (!cursor) {
           this.toast = "No more posts.";
           return this.render();
         }
-        this.mode = { ...this.mode, page: nextPage, posts };
+
+        const { posts, nextCursor } = await this.db.listPosts({
+          conferenceId: this.mode.conference.id,
+          boardId: this.mode.board.id,
+          pageSize: this.ctx.postsPageSize,
+          cursor,
+        });
+        const pageState: PostsPageState = {
+          page: this.mode.pageState.page + 1,
+          pageCursors: [...this.mode.pageState.pageCursors, cursor],
+          nextCursor,
+        };
+        this.mode = { ...this.mode, posts, pageState };
         return this.render();
       }
 
       if (cmd === "P") {
-        if (this.mode.page <= 1) {
+        if (this.mode.pageState.page <= 1) {
           this.toast = "Already at first page.";
           return this.render();
         }
-        const prevPage = this.mode.page - 1;
-        const posts = this.db.listPosts(this.mode.board.id, prevPage, this.ctx.postsPageSize);
-        this.mode = { ...this.mode, page: prevPage, posts };
+
+        const newPage = this.mode.pageState.page - 1;
+        const pageCursors = this.mode.pageState.pageCursors.slice(0, newPage);
+        const cursor = pageCursors[newPage - 1] ?? null;
+        const { posts, nextCursor } = await this.db.listPosts({
+          conferenceId: this.mode.conference.id,
+          boardId: this.mode.board.id,
+          pageSize: this.ctx.postsPageSize,
+          cursor,
+        });
+        const pageState: PostsPageState = {
+          page: newPage,
+          pageCursors,
+          nextCursor,
+        };
+        this.mode = { ...this.mode, posts, pageState };
         return this.render();
       }
 
@@ -1234,22 +1518,38 @@ export class BbsUiSession {
           kind: "writeTitle",
           conference: this.mode.conference,
           board: this.mode.board,
-          postsReturnPage: this.mode.page,
+          postsPageState: this.mode.pageState,
         };
         return this.render();
       }
 
       const readMatch = /^R(?:\s+(\d+))?$/i.exec(inputTrimmed);
       if (readMatch) {
-        const postId = readMatch[1] ? Number(readMatch[1]) : NaN;
-        if (!Number.isFinite(postId) || postId < 1) {
-          this.toast = "Usage: R <postId>";
+        const indexText = readMatch[1] ?? "";
+        if (!indexText) {
+          this.toast = "Usage: R <no>";
           return this.render();
         }
 
-        const post = this.db.getPost(postId);
-        if (!post || post.boardId !== this.mode.board.id) {
-          this.toast = `Post not found: ${postId}`;
+        const index = Number.parseInt(indexText, 10);
+        if (!Number.isFinite(index) || index < 1) {
+          this.toast = "Post number must be >= 1.";
+          return this.render();
+        }
+
+        const summary = this.mode.posts[index - 1];
+        if (!summary) {
+          this.toast = `Post number out of range: ${index}`;
+          return this.render();
+        }
+
+        const post = await this.db.getPost(summary.id);
+        if (
+          !post ||
+          post.conferenceId !== this.mode.conference.id ||
+          post.boardId !== this.mode.board.id
+        ) {
+          this.toast = `Post not found: ${index}`;
           return this.render();
         }
 
@@ -1257,26 +1557,39 @@ export class BbsUiSession {
           kind: "post",
           conference: this.mode.conference,
           board: this.mode.board,
-          postsReturnPage: this.mode.page,
+          postsPageState: this.mode.pageState,
           post,
           page: 1,
         };
         return this.render();
       }
 
-      this.toast = "Commands: N, P, R <id>, W, 0";
+      this.toast = "Commands: N, P, R <no>, W, 0";
       return this.render();
     }
 
     if (this.mode.kind === "post") {
       if (cmd === "0") {
-        const posts = this.db.listPosts(this.mode.board.id, this.mode.postsReturnPage, this.ctx.postsPageSize);
+        const cursor =
+          this.mode.postsPageState.pageCursors[
+            this.mode.postsPageState.page - 1
+          ] ?? null;
+        const { posts, nextCursor } = await this.db.listPosts({
+          conferenceId: this.mode.conference.id,
+          boardId: this.mode.board.id,
+          pageSize: this.ctx.postsPageSize,
+          cursor,
+        });
+        const pageState: PostsPageState = {
+          ...this.mode.postsPageState,
+          nextCursor,
+        };
         this.mode = {
           kind: "posts",
           conference: this.mode.conference,
           board: this.mode.board,
-          page: this.mode.postsReturnPage,
           posts,
+          pageState,
         };
         return this.render();
       }
@@ -1297,13 +1610,26 @@ export class BbsUiSession {
 
     if (this.mode.kind === "writeTitle") {
       if (inputTrimmed === "0") {
-        const posts = this.db.listPosts(this.mode.board.id, this.mode.postsReturnPage, this.ctx.postsPageSize);
+        const cursor =
+          this.mode.postsPageState.pageCursors[
+            this.mode.postsPageState.page - 1
+          ] ?? null;
+        const { posts, nextCursor } = await this.db.listPosts({
+          conferenceId: this.mode.conference.id,
+          boardId: this.mode.board.id,
+          pageSize: this.ctx.postsPageSize,
+          cursor,
+        });
+        const pageState: PostsPageState = {
+          ...this.mode.postsPageState,
+          nextCursor,
+        };
         this.mode = {
           kind: "posts",
           conference: this.mode.conference,
           board: this.mode.board,
-          page: this.mode.postsReturnPage,
           posts,
+          pageState,
         };
         return this.render();
       }
@@ -1318,7 +1644,7 @@ export class BbsUiSession {
         kind: "writeBody",
         conference: this.mode.conference,
         board: this.mode.board,
-        postsReturnPage: this.mode.postsReturnPage,
+        postsPageState: this.mode.postsPageState,
         title,
         lines: [],
       };
@@ -1327,13 +1653,26 @@ export class BbsUiSession {
 
     if (this.mode.kind === "writeBody") {
       if (inputTrimmed === "0") {
-        const posts = this.db.listPosts(this.mode.board.id, this.mode.postsReturnPage, this.ctx.postsPageSize);
+        const cursor =
+          this.mode.postsPageState.pageCursors[
+            this.mode.postsPageState.page - 1
+          ] ?? null;
+        const { posts, nextCursor } = await this.db.listPosts({
+          conferenceId: this.mode.conference.id,
+          boardId: this.mode.board.id,
+          pageSize: this.ctx.postsPageSize,
+          cursor,
+        });
+        const pageState: PostsPageState = {
+          ...this.mode.postsPageState,
+          nextCursor,
+        };
         this.mode = {
           kind: "posts",
           conference: this.mode.conference,
           board: this.mode.board,
-          page: this.mode.postsReturnPage,
           posts,
+          pageState,
         };
         return this.render();
       }
@@ -1345,17 +1684,33 @@ export class BbsUiSession {
           return this.render();
         }
 
-        const postId = this.db.createPost({
+        const postId = await this.db.createPost({
+          conferenceId: this.mode.conference.id,
           boardId: this.mode.board.id,
           title: this.mode.title,
           body,
           author: this.ctx.user,
         });
 
-        const page = 1;
-        const posts = this.db.listPosts(this.mode.board.id, page, this.ctx.postsPageSize);
-        this.mode = { kind: "posts", conference: this.mode.conference, board: this.mode.board, page, posts };
-        this.toast = `Posted #${postId}`;
+        const { posts, nextCursor } = await this.db.listPosts({
+          conferenceId: this.mode.conference.id,
+          boardId: this.mode.board.id,
+          pageSize: this.ctx.postsPageSize,
+          cursor: null,
+        });
+        const pageState: PostsPageState = {
+          page: 1,
+          pageCursors: [null],
+          nextCursor,
+        };
+        this.mode = {
+          kind: "posts",
+          conference: this.mode.conference,
+          board: this.mode.board,
+          posts,
+          pageState,
+        };
+        this.toast = "Posted.";
         return this.render();
       }
 
@@ -1365,7 +1720,7 @@ export class BbsUiSession {
 
     if (this.mode.kind === "page") {
       if (cmd === "0") {
-        return openMenu(this.mode.conference);
+        return await openMenu(this.mode.conference);
       }
 
       if (cmd === "N") {
@@ -1384,7 +1739,7 @@ export class BbsUiSession {
 
     if (this.mode.kind === "link") {
       if (inputTrimmed === "0") {
-        return openMenu(this.mode.conference);
+        return await openMenu(this.mode.conference);
       }
 
       this.toast = "Press 0 to return.";
@@ -1551,9 +1906,13 @@ export class BbsUiSession {
       lines.push("");
     }
 
-    const updatedBy = mode.conference.updatedBy ? sanitizePlainText(mode.conference.updatedBy) : "unknown";
+    const updatedBy = mode.conference.updatedBy
+      ? sanitizePlainText(mode.conference.updatedBy)
+      : "unknown";
     const updatedAt = formatDate(mode.conference.updatedAt);
-    lines.push(`Last updated: ${updatedBy}${updatedAt ? ` @ ${updatedAt}` : ""}`);
+    lines.push(
+      `Last updated: ${updatedBy}${updatedAt ? ` @ ${updatedAt}` : ""}`,
+    );
     lines.push("");
     lines.push("Press any key to continue.");
 
@@ -1569,9 +1928,13 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Welcome Edit`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Welcome Edit`,
+    );
     lines.push("");
-    lines.push(`Current title: ${sanitizePlainText(mode.conference.welcomeTitle || "(none)")}`);
+    lines.push(
+      `Current title: ${sanitizePlainText(mode.conference.welcomeTitle || "(none)")}`,
+    );
     lines.push("");
     lines.push("Enter new title (0 to cancel):");
 
@@ -1593,7 +1956,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Welcome Edit`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Welcome Edit`,
+    );
     lines.push(`Title: ${sanitizePlainText(mode.title)}`);
     lines.push("");
     lines.push("Enter body. '.' on its own line to finish. '0' to cancel.");
@@ -1601,7 +1966,8 @@ export class BbsUiSession {
 
     const preview = mode.lines.slice(-previewHeight);
     for (const line of preview) {
-      for (const wrapped of wrapLine(sanitizePlainText(line), cols)) lines.push(wrapped);
+      for (const wrapped of wrapLine(sanitizePlainText(line), cols))
+        lines.push(wrapped);
     }
 
     lines.push("-".repeat(Math.min(cols, 80)));
@@ -1618,9 +1984,13 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Menu Design`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Menu Design`,
+    );
     lines.push("");
-    lines.push(`Current title: ${sanitizePlainText(mode.conference.menuTitle || "(none)")}`);
+    lines.push(
+      `Current title: ${sanitizePlainText(mode.conference.menuTitle || "(none)")}`,
+    );
     lines.push("Enter new title (0 to cancel):");
 
     return this.screen({
@@ -1641,10 +2011,14 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Menu Design`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Menu Design`,
+    );
     lines.push(`Title: ${sanitizePlainText(mode.title || "(none)")}`);
     lines.push("");
-    lines.push("Enter menu text. '.' on its own line to finish. '0' to cancel.");
+    lines.push(
+      "Enter menu text. '.' on its own line to finish. '0' to cancel.",
+    );
     lines.push("-".repeat(Math.min(cols, 80)));
 
     const preview = mode.lines.slice(-previewHeight);
@@ -1676,8 +2050,12 @@ export class BbsUiSession {
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
 
-    const menuTitle = mode.conference.menuTitle ? sanitizePlainText(mode.conference.menuTitle) : "Menu";
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] ${menuTitle}`);
+    const menuTitle = mode.conference.menuTitle
+      ? sanitizePlainText(mode.conference.menuTitle)
+      : "Menu";
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] ${menuTitle}`,
+    );
     lines.push("");
 
     const visibleEntries: { index: number; item: ConferenceMenuItem }[] = [];
@@ -1694,7 +2072,9 @@ export class BbsUiSession {
         const label = sanitizePlainText(item.label);
         const displayNo = sanitizePlainText(item.displayNo);
         const displayType = sanitizePlainText(item.displayType);
-        const parts = [displayNo, label, displayType].filter((part) => part.length > 0);
+        const parts = [displayNo, label, displayType].filter(
+          (part) => part.length > 0,
+        );
         const detail = parts.length ? parts.join(" ") : label;
         lines.push(`${entry.index}) ${detail}`);
       }
@@ -1714,7 +2094,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Menu Edit`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Menu Edit`,
+    );
     lines.push("");
 
     if (mode.items.length === 0) {
@@ -1724,8 +2106,12 @@ export class BbsUiSession {
         const item = mode.items[i]!;
         const label = sanitizePlainText(item.label);
         const status = item.hidden ? "hidden" : "show";
-        const displayNo = item.displayNo ? `no=${sanitizePlainText(item.displayNo)}` : "no=-";
-        const displayType = item.displayType ? `type=${sanitizePlainText(item.displayType)}` : "type=-";
+        const displayNo = item.displayNo
+          ? `no=${sanitizePlainText(item.displayNo)}`
+          : "no=-";
+        const displayType = item.displayType
+          ? `type=${sanitizePlainText(item.displayType)}`
+          : "type=-";
         const detail =
           item.actionType === "board"
             ? `board:${item.actionRef}`
@@ -1734,12 +2120,14 @@ export class BbsUiSession {
               : item.actionType === "conference"
                 ? `conference:${item.actionRef}`
                 : `link:${sanitizePlainText(item.actionRef)}`;
-        lines.push(`${i + 1}) [${status}] ${displayNo} ${displayType} ${label} (${detail})`);
+        lines.push(
+          `${i + 1}) [${status}] ${displayNo} ${displayType} ${label} (${detail})`,
+        );
       }
     }
 
     const hints = [
-      "Commands: A=Add  L <n>=Label  N <n>=No  Y <n>=Type  U <n>=Target  H <n>=Hide  D <n>=Delete  M <from> <to>=Move  0=Back",
+      "Commands: A=Add  L <n>=Label  N <n>=No  Y <n>=Type  U <n>=Target  H <n>=Hide  D <n>=Delete  0=Back",
     ];
     if (!mode.conference.isRoot) hints.push("Extra: B=Boards");
     if (mode.conference.isRoot) hints.push("Extra: C=Conferences");
@@ -1757,7 +2145,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Label`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Label`,
+    );
     lines.push(`Current: ${sanitizePlainText(mode.item.label)}`);
     lines.push("Enter new label (0 to cancel):");
 
@@ -1773,8 +2163,12 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Display No`);
-    lines.push(`Current: ${sanitizePlainText(mode.item.displayNo || "(none)")}`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Display No`,
+    );
+    lines.push(
+      `Current: ${sanitizePlainText(mode.item.displayNo || "(none)")}`,
+    );
     lines.push("Enter new display number (0 to cancel):");
 
     return this.screen({
@@ -1785,12 +2179,18 @@ export class BbsUiSession {
     });
   }
 
-  private renderMenuEditDisplayType(mode: ModeMenuEditDisplayType): ScreenModel {
+  private renderMenuEditDisplayType(
+    mode: ModeMenuEditDisplayType,
+  ): ScreenModel {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Display Type`);
-    lines.push(`Current: ${sanitizePlainText(mode.item.displayType || "(none)")}`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Display Type`,
+    );
+    lines.push(
+      `Current: ${sanitizePlainText(mode.item.displayType || "(none)")}`,
+    );
     lines.push("Enter new display type (0 to cancel):");
 
     return this.screen({
@@ -1801,11 +2201,15 @@ export class BbsUiSession {
     });
   }
 
-  private renderMenuEditBoardSelect(mode: ModeMenuEditBoardSelect): ScreenModel {
+  private renderMenuEditBoardSelect(
+    mode: ModeMenuEditBoardSelect,
+  ): ScreenModel {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Board Target`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Board Target`,
+    );
     lines.push(`Label: ${sanitizePlainText(mode.item.label)}`);
     lines.push("");
     lines.push("Select a board:");
@@ -1824,11 +2228,15 @@ export class BbsUiSession {
     });
   }
 
-  private renderMenuEditConferenceSelect(mode: ModeMenuEditConferenceSelect): ScreenModel {
+  private renderMenuEditConferenceSelect(
+    mode: ModeMenuEditConferenceSelect,
+  ): ScreenModel {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Conference Target`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Conference Target`,
+    );
     lines.push(`Label: ${sanitizePlainText(mode.item.label)}`);
     lines.push("");
     lines.push("Select a conference:");
@@ -1851,7 +2259,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Link`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Link`,
+    );
     lines.push(`Current: ${sanitizePlainText(mode.item.actionRef)}`);
     lines.push("Enter new URL (0 to cancel):");
 
@@ -1867,8 +2277,12 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Page`);
-    lines.push(`Current title: ${sanitizePlainText(mode.item.actionRef || "(none)")}`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Page`,
+    );
+    lines.push(
+      `Current title: ${sanitizePlainText(mode.item.actionRef || "(none)")}`,
+    );
     lines.push("Enter new title (0 to cancel):");
 
     return this.screen({
@@ -1889,7 +2303,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Page`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Edit Page`,
+    );
     lines.push(`Title: ${sanitizePlainText(mode.title)}`);
     lines.push("");
     lines.push("Enter body. '.' on its own line to finish. '0' to cancel.");
@@ -1897,7 +2313,8 @@ export class BbsUiSession {
 
     const preview = mode.lines.slice(-previewHeight);
     for (const line of preview) {
-      for (const wrapped of wrapLine(sanitizePlainText(line), cols)) lines.push(wrapped);
+      for (const wrapped of wrapLine(sanitizePlainText(line), cols))
+        lines.push(wrapped);
     }
 
     lines.push("-".repeat(Math.min(cols, 80)));
@@ -1914,7 +2331,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`,
+    );
     lines.push("");
     lines.push("Select type:");
     lines.push("B) Board");
@@ -1935,7 +2354,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`,
+    );
     lines.push("");
     lines.push(`Type: ${mode.actionType}`);
     lines.push("Enter label (0 to cancel):");
@@ -1952,7 +2373,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`,
+    );
     lines.push(`Label: ${sanitizePlainText(mode.label)}`);
     lines.push("");
     lines.push("Select a board:");
@@ -1971,11 +2394,15 @@ export class BbsUiSession {
     });
   }
 
-  private renderMenuAddConferenceSelect(mode: ModeMenuAddConferenceSelect): ScreenModel {
+  private renderMenuAddConferenceSelect(
+    mode: ModeMenuAddConferenceSelect,
+  ): ScreenModel {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Menu Item`,
+    );
     lines.push(`Label: ${sanitizePlainText(mode.label)}`);
     lines.push("");
     lines.push("Select a conference:");
@@ -1998,7 +2425,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Page`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Page`,
+    );
     lines.push(`Label: ${sanitizePlainText(mode.label)}`);
     lines.push("");
     lines.push("Enter page title (0 to cancel):");
@@ -2021,7 +2450,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Page`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Page`,
+    );
     lines.push(`Label: ${sanitizePlainText(mode.label)}`);
     lines.push(`Title: ${sanitizePlainText(mode.title)}`);
     lines.push("");
@@ -2030,7 +2461,8 @@ export class BbsUiSession {
 
     const preview = mode.lines.slice(-previewHeight);
     for (const line of preview) {
-      for (const wrapped of wrapLine(sanitizePlainText(line), cols)) lines.push(wrapped);
+      for (const wrapped of wrapLine(sanitizePlainText(line), cols))
+        lines.push(wrapped);
     }
 
     lines.push("-".repeat(Math.min(cols, 80)));
@@ -2047,7 +2479,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Link`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Link`,
+    );
     lines.push(`Label: ${sanitizePlainText(mode.label)}`);
     lines.push("");
     lines.push("Enter URL (0 to cancel):");
@@ -2064,7 +2498,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Board Manage`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Board Manage`,
+    );
     lines.push("");
 
     if (mode.boards.length === 0) {
@@ -2088,7 +2524,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Add Board`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Add Board`,
+    );
     lines.push("");
     lines.push("Enter board name (0 to cancel):");
 
@@ -2104,7 +2542,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Rename Board`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Rename Board`,
+    );
     lines.push("");
     lines.push(`Current: ${sanitizePlainText(mode.board.name)}`);
     lines.push("Enter new name (0 to cancel):");
@@ -2122,18 +2562,19 @@ export class BbsUiSession {
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
     lines.push(
-      `[Conference: ${sanitizePlainText(mode.conference.name)}] [Board: ${sanitizePlainText(mode.board.name)}] Page ${mode.page}`,
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] [Board: ${sanitizePlainText(mode.board.name)}] Page ${mode.pageState.page}`,
     );
     lines.push("");
 
     if (mode.posts.length === 0) {
       lines.push("(no posts)");
     } else {
-      for (const post of mode.posts) {
+      mode.posts.forEach((post, index) => {
+        const displayNo = String(index + 1);
         lines.push(
-          `${post.id}\t${sanitizePlainText(post.title)}\t(${sanitizePlainText(post.author)}, ${formatDate(post.createdAt)})`,
+          `${displayNo}\t${sanitizePlainText(post.title)}\t(${sanitizePlainText(post.author)}, ${formatDate(post.createdAt)})`,
         );
-      }
+      });
     }
 
     return this.screen({
@@ -2141,7 +2582,7 @@ export class BbsUiSession {
       lines,
       prompt: "> ",
       inputMode: "line",
-      hints: ["Commands: N=Next  P=Prev  R <id>=Read  W=Write  0=Menu"],
+      hints: ["Commands: N=Next  P=Prev  R <no>=Read  W=Write  0=Menu"],
     });
   }
 
@@ -2170,7 +2611,7 @@ export class BbsUiSession {
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
     lines.push(
-      `[Conference: ${sanitizePlainText(mode.conference.name)}] [Board: ${sanitizePlainText(mode.board.name)}] Post #${mode.post.id} (${page}/${totalPages})`,
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] [Board: ${sanitizePlainText(mode.board.name)}] Post (${page}/${totalPages})`,
     );
     lines.push(`Title: ${sanitizePlainText(mode.post.title)}`);
     lines.push(`Author: ${sanitizePlainText(mode.post.author)}`);
@@ -2226,7 +2667,8 @@ export class BbsUiSession {
 
     const preview = mode.lines.slice(-previewHeight);
     for (const line of preview) {
-      for (const wrapped of wrapLine(sanitizePlainText(line), cols)) lines.push(wrapped);
+      for (const wrapped of wrapLine(sanitizePlainText(line), cols))
+        lines.push(wrapped);
     }
 
     lines.push("-".repeat(Math.min(cols, 80)));
@@ -2264,7 +2706,9 @@ export class BbsUiSession {
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
-    lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Page (${page}/${totalPages})`);
+    lines.push(
+      `[Conference: ${sanitizePlainText(mode.conference.name)}] Page (${page}/${totalPages})`,
+    );
     lines.push(`Title: ${pageTitle}`);
     lines.push("-".repeat(Math.min(cols, 80)));
     for (const line of pages[pageIndex] ?? []) lines.push(line);
@@ -2287,7 +2731,11 @@ export class BbsUiSession {
     lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}] Link`);
     lines.push(`Label: ${sanitizePlainText(mode.item.label)}`);
     lines.push("URL:");
-    for (const wrapped of wrapLine(sanitizePlainText(mode.item.actionRef), cols)) lines.push(wrapped);
+    for (const wrapped of wrapLine(
+      sanitizePlainText(mode.item.actionRef),
+      cols,
+    ))
+      lines.push(wrapped);
     lines.push("");
     lines.push("Open this URL in your browser.");
 

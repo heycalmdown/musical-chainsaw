@@ -1,7 +1,11 @@
 import http from "node:http";
 import crypto from "node:crypto";
-import { DEFAULT_DB_PATH, DEFAULT_PORT, DEFAULT_SESSION_TTL_MS, resolvePath } from "./config";
-import { BbsDb } from "./db";
+import {
+  DEFAULT_PORT,
+  DEFAULT_SESSION_TTL_MS,
+  resolveDbConfigFromEnv,
+} from "./config";
+import { createBbsDb } from "./db";
 import { BbsUiSession } from "./ui/session";
 import type {
   ApiErrorResponse,
@@ -28,9 +32,18 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
-function normalizeTermSize(input: { rows?: unknown; cols?: unknown }): TerminalSize {
-  const rows = typeof input.rows === "number" && Number.isFinite(input.rows) ? clampInt(input.rows, 10, 200) : 24;
-  const cols = typeof input.cols === "number" && Number.isFinite(input.cols) ? clampInt(input.cols, 20, 240) : 80;
+function normalizeTermSize(input: {
+  rows?: unknown;
+  cols?: unknown;
+}): TerminalSize {
+  const rows =
+    typeof input.rows === "number" && Number.isFinite(input.rows)
+      ? clampInt(input.rows, 10, 200)
+      : 24;
+  const cols =
+    typeof input.cols === "number" && Number.isFinite(input.cols)
+      ? clampInt(input.cols, 20, 240)
+      : 80;
   return { rows, cols };
 }
 
@@ -38,15 +51,24 @@ function sanitizePlainText(value: string): string {
   return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x1b]/g, "");
 }
 
-function normalizeNickname(value: unknown): { ok: true; nickname: string } | { ok: false; message: string } {
-  if (typeof value !== "string") return { ok: false, message: "nickname must be a string" };
+function normalizeNickname(
+  value: unknown,
+): { ok: true; nickname: string } | { ok: false; message: string } {
+  if (typeof value !== "string")
+    return { ok: false, message: "nickname must be a string" };
   const cleaned = sanitizePlainText(value).trim();
-  if (cleaned.length === 0) return { ok: false, message: "nickname must be non-empty" };
-  if (cleaned.length > 20) return { ok: false, message: "nickname must be <= 20 chars" };
+  if (cleaned.length === 0)
+    return { ok: false, message: "nickname must be non-empty" };
+  if (cleaned.length > 20)
+    return { ok: false, message: "nickname must be <= 20 chars" };
   return { ok: true, nickname: cleaned };
 }
 
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+): void {
   const json = JSON.stringify(body);
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
@@ -54,12 +76,20 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(json);
 }
 
-function sendError(res: http.ServerResponse, status: number, code: string, message: string): void {
+function sendError(
+  res: http.ServerResponse,
+  status: number,
+  code: string,
+  message: string,
+): void {
   const body: ApiErrorResponse = { error: { code, message } };
   sendJson(res, status, body);
 }
 
-async function readJsonBody(req: http.IncomingMessage, maxBytes: number): Promise<unknown> {
+async function readJsonBody(
+  req: http.IncomingMessage,
+  maxBytes: number,
+): Promise<unknown> {
   const chunks: Buffer[] = [];
   let total = 0;
 
@@ -75,13 +105,19 @@ async function readJsonBody(req: http.IncomingMessage, maxBytes: number): Promis
   return JSON.parse(text) as unknown;
 }
 
-async function withLock<T>(entry: SessionEntry, fn: () => T | Promise<T>): Promise<T> {
+async function withLock<T>(
+  entry: SessionEntry,
+  fn: () => T | Promise<T>,
+): Promise<T> {
   const prev = entry.lock;
   let release: () => void;
   const next = new Promise<void>((resolve) => {
     release = resolve;
   });
-  entry.lock = prev.then(() => next, () => next);
+  entry.lock = prev.then(
+    () => next,
+    () => next,
+  );
   await prev;
   try {
     return await fn();
@@ -94,11 +130,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function parseCreateSessionRequest(value: unknown): { ok: true; req: CreateSessionRequest } | { ok: false; message: string } {
+function parseCreateSessionRequest(
+  value: unknown,
+): { ok: true; req: CreateSessionRequest } | { ok: false; message: string } {
   if (!isRecord(value)) return { ok: false, message: "Body must be an object" };
-  if (typeof value.nickname !== "string") return { ok: false, message: "nickname must be a string" };
-  if (typeof value.rows !== "undefined" && typeof value.rows !== "number") return { ok: false, message: "rows must be a number" };
-  if (typeof value.cols !== "undefined" && typeof value.cols !== "number") return { ok: false, message: "cols must be a number" };
+  if (typeof value.nickname !== "string")
+    return { ok: false, message: "nickname must be a string" };
+  if (typeof value.rows !== "undefined" && typeof value.rows !== "number")
+    return { ok: false, message: "rows must be a number" };
+  if (typeof value.cols !== "undefined" && typeof value.cols !== "number")
+    return { ok: false, message: "cols must be a number" };
   return {
     ok: true,
     req: {
@@ -109,27 +150,37 @@ function parseCreateSessionRequest(value: unknown): { ok: true; req: CreateSessi
   };
 }
 
-function parseSessionEventRequest(value: unknown): { ok: true; req: SessionEventRequest } | { ok: false; message: string } {
+function parseSessionEventRequest(
+  value: unknown,
+): { ok: true; req: SessionEventRequest } | { ok: false; message: string } {
   if (!isRecord(value)) return { ok: false, message: "Body must be an object" };
-  if (typeof value.input !== "string") return { ok: false, message: "input must be a string" };
+  if (typeof value.input !== "string")
+    return { ok: false, message: "input must be a string" };
   const input = sanitizePlainText(value.input);
-  if (input.length > 2000) return { ok: false, message: "input must be <= 2000 chars" };
+  if (input.length > 2000)
+    return { ok: false, message: "input must be <= 2000 chars" };
   return { ok: true, req: { input } };
 }
 
 function shouldExit(screen: ScreenModel): boolean {
-  return Array.isArray(screen.actions) && screen.actions.some((a) => a.type === "exit");
+  return (
+    Array.isArray(screen.actions) &&
+    screen.actions.some((a) => a.type === "exit")
+  );
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const portRaw = Number(process.env.BBS_PORT ?? DEFAULT_PORT);
   const port = Number.isFinite(portRaw) ? portRaw : DEFAULT_PORT;
 
-  const sessionTtlMsRaw = Number(process.env.BBS_SESSION_TTL_MS ?? DEFAULT_SESSION_TTL_MS);
-  const sessionTtlMs = Number.isFinite(sessionTtlMsRaw) ? sessionTtlMsRaw : DEFAULT_SESSION_TTL_MS;
-  const dbPath = resolvePath(process.env.BBS_DB_PATH ?? DEFAULT_DB_PATH);
-
-  const db = new BbsDb(dbPath);
+  const sessionTtlMsRaw = Number(
+    process.env.BBS_SESSION_TTL_MS ?? DEFAULT_SESSION_TTL_MS,
+  );
+  const sessionTtlMs = Number.isFinite(sessionTtlMsRaw)
+    ? sessionTtlMsRaw
+    : DEFAULT_SESSION_TTL_MS;
+  const dbConfig = resolveDbConfigFromEnv();
+  const db = await createBbsDb(dbConfig);
   const sessions = new Map<string, SessionEntry>();
 
   const pruneSessions = () => {
@@ -167,10 +218,17 @@ function main(): void {
           return;
         }
 
-        const term = normalizeTermSize({ rows: parsed.req.rows, cols: parsed.req.cols });
+        const term = normalizeTermSize({
+          rows: parsed.req.rows,
+          cols: parsed.req.cols,
+        });
         const sessionId = crypto.randomUUID();
         const uiSession = new BbsUiSession(db);
-        const screen = uiSession.handleHello({ user: nickParsed.nickname, rows: term.rows, cols: term.cols });
+        const screen = await uiSession.handleHello({
+          user: nickParsed.nickname,
+          rows: term.rows,
+          cols: term.cols,
+        });
 
         const now = Date.now();
         sessions.set(sessionId, {
@@ -244,13 +302,13 @@ function main(): void {
 
   server.listen(port, () => {
     console.log(`[server] http://localhost:${port}`);
-    console.log(`[server] db: ${dbPath}`);
+    console.log(`[server] db: dynamodb:${dbConfig.dynamodb.tableName}`);
   });
 
   const shutdown = () => {
     server.close(() => {
       clearInterval(pruneTimer);
-      db.close();
+      void db.close();
     });
   };
 
@@ -258,4 +316,7 @@ function main(): void {
   process.on("SIGTERM", shutdown);
 }
 
-main();
+main().catch((error) => {
+  console.error("[server] failed to start", error);
+  process.exitCode = 1;
+});

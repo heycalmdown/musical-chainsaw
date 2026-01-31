@@ -1,15 +1,13 @@
 export type Board = {
-  id: number;
+  id: string;
   name: string;
-  sortOrder: number;
-  conferenceId: number;
+  conferenceId: string;
 };
 
 export type Conference = {
-  id: number;
+  id: string;
   slug: string | null;
   name: string;
-  sortOrder: number;
   isRoot: boolean;
   welcomeTitle: string;
   welcomeBody: string;
@@ -22,30 +20,30 @@ export type Conference = {
 export type ConferenceMenuActionType = "board" | "page" | "link" | "conference";
 
 export type ConferenceMenuItem = {
-  id: number;
-  conferenceId: number;
+  id: string;
+  conferenceId: string;
   label: string;
   displayNo: string;
   displayType: string;
   actionType: ConferenceMenuActionType;
   actionRef: string;
   body: string;
-  sortOrder: number;
   hidden: boolean;
   updatedAt: string;
   updatedBy: string;
 };
 
 export type PostSummary = {
-  id: number;
+  id: string;
   title: string;
   author: string;
   createdAt: string;
 };
 
 export type Post = {
-  id: number;
-  boardId: number;
+  id: string;
+  conferenceId: string;
+  boardId: string;
   title: string;
   body: string;
   author: string;

@@ -6,16 +6,16 @@
 
 - 목표: 브라우저에서 접속 가능한 **텍스트 기반 BBS**
 - UI: 터미널 스타일(클리어+리드로우), 번호 기반 메뉴
-- 기능(MVP): 보드 목록 / 글 목록 / 글 읽기 / 글 쓰기
+- 기능(MVP): 메뉴 아이템 목록 / 글 목록 / 글 읽기 / 글 쓰기
 - 사용자 식별: 닉네임(오픈)
 - 통신: **REST 세션 API**
-- 저장소: sqlite
+- 저장소: DynamoDB (single-table)
 
 비범위(MVP): 로그인/계정, 채팅/귓속말(WS 도입 후), 댓글, 수정/삭제, 검색, 권한/역할, 첨부
 
 ## 아키텍처 요약
 
-`Browser(xterm.js) → REST API → Session state machine(render ScreenModel) → sqlite`
+`Browser(xterm.js) → REST API → Session state machine(render ScreenModel) → DynamoDB`
 
 - Web client: 화면 렌더링 + 입력 수집(라인 단위) + 요청 직렬화(in-flight=1)
 - Server: 세션 상태 머신 + 커맨드 파싱 + 페이징/줄바꿈 + DB 접근
@@ -48,23 +48,9 @@ Content-Type: application/json
 - `rows/cols`는 세션 생성 시 고정
 - 이후 브라우저 resize는 무시(요청에도 반영하지 않음)
 
-## 데이터 모델 (sqlite)
+## 데이터 모델 (DynamoDB)
 
-`boards`
-- `id` (PK)
-- `name`
-- `sort_order`
-
-`posts`
-- `id` (PK)
-- `board_id` (FK)
-- `title`
-- `body`
-- `author`
-- `created_at`
-
-인덱스:
-- `posts(board_id, id DESC)`
+- 단일 테이블 설계(세부 키 패턴은 `MIGRATION_PLAN.md` 참고)
 
 ## 디렉터리/엔트리포인트
 
@@ -76,7 +62,7 @@ Content-Type: application/json
 
 ### 1) REST API server + schema
 
-- sqlite 스키마 생성 및 기본 보드 시드
+- DynamoDB 테이블/인덱스 준비 및 기본 데이터 시드
 - 세션 관리
   - `sessionId` 발급
   - 세션 TTL 정리
@@ -92,7 +78,7 @@ Content-Type: application/json
 - 요청 직렬화(in-flight=1) + 입력 큐잉
 
 **완료 기준**
-- 보드 → 글 목록 → 글 보기까지 정상 동작
+- 메뉴 아이템(보드) → 글 목록 → 글 보기까지 정상 동작
 
 ### 3) Write flow
 

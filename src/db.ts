@@ -1,13 +1,212 @@
-import fs from "node:fs";
-import path from "node:path";
-import { DatabaseSync, StatementSync } from "node:sqlite";
-import type { Board, Conference, ConferenceMenuItem, Post, PostSummary } from "./domain";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import {
+  BatchWriteCommand,
+  DeleteCommand,
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
+import { monotonicFactory } from "ulid";
+import type {
+  Board,
+  Conference,
+  ConferenceMenuItem,
+  Post,
+  PostSummary,
+} from "./domain";
+import type { DbConfig } from "./config";
 
-type DbConferenceRow = {
-  id: number;
-  slug: string | null;
+export type PostsPage = { posts: PostSummary[]; nextCursor: string | null };
+
+export type ListPostsInput = {
+  conferenceId: string;
+  boardId: string;
+  pageSize: number;
+  cursor?: string | null;
+};
+
+export interface BbsDb {
+  listConferences(): Promise<Conference[]>;
+  getConference(conferenceId: string): Promise<Conference | null>;
+  getRootConference(): Promise<Conference | null>;
+  updateConferenceWelcome(args: {
+    conferenceId: string;
+    title: string;
+    body: string;
+    updatedBy: string;
+  }): Promise<void>;
+  updateConferenceMenu(args: {
+    conferenceId: string;
+    title: string;
+    body: string;
+    updatedBy: string;
+  }): Promise<void>;
+  createConference(args: { name: string; updatedBy: string }): Promise<string>;
+  renameConference(args: {
+    conferenceId: string;
+    name: string;
+    updatedBy: string;
+  }): Promise<boolean>;
+  deleteConference(args: { conferenceId: string }): Promise<boolean>;
+
+  listMenuItems(conferenceId: string): Promise<ConferenceMenuItem[]>;
+  getMenuItem(args: {
+    conferenceId: string;
+    menuItemId: string;
+  }): Promise<ConferenceMenuItem | null>;
+  createMenuItem(args: {
+    conferenceId: string;
+    label: string;
+    displayNo: string;
+    displayType: string;
+    actionType: ConferenceMenuItem["actionType"];
+    actionRef: string;
+    body: string;
+    hidden: boolean;
+    updatedBy: string;
+  }): Promise<string>;
+  deleteMenuItem(args: {
+    conferenceId: string;
+    menuItemId: string;
+  }): Promise<boolean>;
+  setMenuItemHidden(args: {
+    conferenceId: string;
+    menuItemId: string;
+    hidden: boolean;
+    updatedBy: string;
+  }): Promise<boolean>;
+  updateMenuItemMeta(args: {
+    conferenceId: string;
+    menuItemId: string;
+    label: string;
+    displayNo: string;
+    displayType: string;
+    updatedBy: string;
+  }): Promise<boolean>;
+  updateMenuItemContent(args: {
+    conferenceId: string;
+    menuItemId: string;
+    actionRef: string;
+    body: string;
+    updatedBy: string;
+  }): Promise<boolean>;
+  getBoard(conferenceId: string, boardId: string): Promise<Board | null>;
+  listBoards(conferenceId: string): Promise<Board[]>;
+  createBoard(args: { conferenceId: string; name: string }): Promise<string>;
+  renameBoard(args: {
+    conferenceId: string;
+    boardId: string;
+    name: string;
+  }): Promise<boolean>;
+  deleteBoard(args: {
+    conferenceId: string;
+    boardId: string;
+  }): Promise<boolean>;
+
+  listPosts(args: ListPostsInput): Promise<PostsPage>;
+  getPost(postId: string): Promise<Post | null>;
+  createPost(args: {
+    conferenceId: string;
+    boardId: string;
+    title: string;
+    body: string;
+    author: string;
+  }): Promise<string>;
+
+  close(): Promise<void>;
+}
+
+export async function createBbsDb(config: DbConfig): Promise<BbsDb> {
+  const db = new DynamoBbsDb(config.dynamodb);
+  await db.init();
+  return db;
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+const ID_PAD_WIDTH = 12;
+
+function padId(value: string | number): string {
+  const num = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(num) || num < 0) return String(value);
+  return String(Math.trunc(num)).padStart(ID_PAD_WIDTH, "0");
+}
+
+const createUlid = monotonicFactory();
+
+function generateUlid(): string {
+  return createUlid();
+}
+
+function encodeCursor(payload: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
+}
+
+function decodeCursor(
+  cursor: string | null | undefined,
+): Record<string, unknown> | null {
+  if (!cursor) return null;
+  try {
+    const text = Buffer.from(cursor, "base64").toString("utf8");
+    const data = JSON.parse(text);
+    if (data && typeof data === "object")
+      return data as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+const GS1_NAME = "GS1";
+const CONFERENCE_PARTITION = "CONF";
+
+function conferenceItemPk(): string {
+  return CONFERENCE_PARTITION;
+}
+
+function conferenceItemSk(id: string): string {
+  return `CONF#${id}`;
+}
+
+function conferenceMenuPk(id: string): string {
+  return `CONF#${id}`;
+}
+
+function boardPk(_: string, boardId: string): string {
+  return `BOARD#${boardId}`;
+}
+
+function menuSk(menuItemId: string): string {
+  return `MENU#${padId(menuItemId)}`;
+}
+
+function postSk(postId: string): string {
+  return `POST#${postId}`;
+}
+
+function boardGsPk(conferenceId: string): string {
+  return `CONF#${conferenceId}`;
+}
+
+function boardGsSk(boardId: string): string {
+  return `BOARD#${padId(boardId)}`;
+}
+
+function postGsPk(postId: string): string {
+  return `POST#${postId}`;
+}
+
+type DdbConferenceItem = {
+  PK: string;
+  SK: string;
+  entityType: "CONFERENCE";
+  id: string;
+  slug?: string | null;
   name: string;
-  sort_order: number;
   is_root: number;
   welcome_title: string;
   welcome_body: string;
@@ -17,684 +216,942 @@ type DbConferenceRow = {
   updated_by: string;
 };
 
-type DbMenuItemRow = {
-  id: number;
-  conference_id: number;
+type DdbMenuItemRecord = {
+  PK: string;
+  SK: string;
+  entityType: "MENU_ITEM";
+  conference_id: string;
+  menu_item_id: string;
   label: string;
   display_no: string;
   display_type: string;
-  action_type: string;
+  action_type: ConferenceMenuItem["actionType"];
   action_ref: string;
   body: string;
-  sort_order: number;
   hidden: number;
+  enabled?: number;
   updated_at: string;
   updated_by: string;
 };
 
-type DbBoardRow = { id: number; name: string; sort_order: number; conference_id: number | null };
-type DbPostSummaryRow = { id: number; title: string; author: string; created_at: string };
-type DbPostRow = {
-  id: number;
-  board_id: number;
+type DdbBoardItem = {
+  PK: string;
+  SK: string;
+  GS1PK?: string;
+  GS1SK?: string;
+  entityType: "BOARD";
+  id: string;
+  name: string;
+  conference_id: string;
+};
+
+type DdbPostItem = {
+  PK: string;
+  SK: string;
+  GS1PK?: string;
+  GS1SK?: string;
+  entityType: "POST";
+  post_id: string;
+  board_id: string;
+  conference_id: string;
   title: string;
   body: string;
   author: string;
   created_at: string;
 };
 
-export class BbsDb {
-  private readonly db: DatabaseSync;
+type DdbWriteRequest = {
+  DeleteRequest?: {
+    Key: Record<string, unknown>;
+  };
+  PutRequest?: {
+    Item: Record<string, unknown>;
+  };
+};
 
-  private readonly insertConferenceStmt: StatementSync;
-  private readonly getConferenceStmt: StatementSync;
-  private readonly getRootConferenceStmt: StatementSync;
-  private readonly listConferencesStmt: StatementSync;
-  private readonly getDefaultConferenceStmt: StatementSync;
-  private readonly getMaxConferenceSortOrderStmt: StatementSync;
-  private readonly updateConferenceWelcomeStmt: StatementSync;
-  private readonly updateConferenceMenuStmt: StatementSync;
-  private readonly updateConferenceNameStmt: StatementSync;
-  private readonly deleteConferenceStmt: StatementSync;
+function mapConferenceItem(item: DdbConferenceItem): Conference {
+  return {
+    id: item.id,
+    slug: item.slug ?? null,
+    name: item.name,
+    isRoot: item.is_root === 1,
+    welcomeTitle: item.welcome_title ?? "",
+    welcomeBody: item.welcome_body ?? "",
+    menuTitle: item.menu_title ?? "",
+    menuBody: item.menu_body ?? "",
+    updatedAt: item.updated_at ?? "",
+    updatedBy: item.updated_by ?? "",
+  };
+}
 
-  private readonly countMenuItemsStmt: StatementSync;
-  private readonly listMenuItemsStmt: StatementSync;
-  private readonly getMenuItemStmt: StatementSync;
-  private readonly insertMenuItemStmt: StatementSync;
-  private readonly deleteMenuItemStmt: StatementSync;
-  private readonly updateMenuItemHiddenStmt: StatementSync;
-  private readonly updateMenuItemMetaStmt: StatementSync;
-  private readonly updateMenuItemContentStmt: StatementSync;
-  private readonly updateMenuItemSortOrderStmt: StatementSync;
-  private readonly deleteMenuItemsByConferenceStmt: StatementSync;
+function mapMenuItem(item: DdbMenuItemRecord): ConferenceMenuItem {
+  return {
+    id: item.menu_item_id,
+    conferenceId: item.conference_id,
+    label: item.label,
+    displayNo: item.display_no,
+    displayType: item.display_type,
+    actionType: item.action_type,
+    actionRef: item.action_ref,
+    body: item.body,
+    hidden: Boolean(item.hidden),
+    updatedAt: item.updated_at ?? "",
+    updatedBy: item.updated_by ?? "",
+  };
+}
 
-  private readonly countBoardsByConferenceStmt: StatementSync;
-  private readonly getMaxBoardSortOrderStmt: StatementSync;
-  private readonly insertBoardStmt: StatementSync;
-  private readonly getBoardStmt: StatementSync;
-  private readonly listBoardsByConferenceStmt: StatementSync;
-  private readonly updateBoardsConferenceStmt: StatementSync;
-  private readonly updateBoardNameStmt: StatementSync;
-  private readonly deleteBoardStmt: StatementSync;
-  private readonly deleteBoardsByConferenceStmt: StatementSync;
+function mapBoardItem(item: DdbBoardItem): Board {
+  return {
+    id: item.id,
+    name: item.name,
+    conferenceId: item.conference_id,
+  };
+}
 
-  private readonly listPostsStmt: StatementSync;
-  private readonly getPostStmt: StatementSync;
-  private readonly insertPostStmt: StatementSync;
-  private readonly deletePostsByBoardStmt: StatementSync;
-  private readonly deletePostsByConferenceStmt: StatementSync;
+function mapPostSummaryItem(item: DdbPostItem): PostSummary {
+  return {
+    id: item.post_id,
+    title: item.title,
+    author: item.author,
+    createdAt: item.created_at,
+  };
+}
 
-  constructor(dbPath: string) {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    this.db = new DatabaseSync(dbPath);
+function mapPostItem(item: DdbPostItem): Post {
+  return {
+    id: item.post_id,
+    conferenceId: item.conference_id,
+    boardId: item.board_id,
+    title: item.title,
+    body: item.body,
+    author: item.author,
+    createdAt: item.created_at,
+  };
+}
 
-    this.migrate();
+class DynamoBbsDb implements BbsDb {
+  private readonly client: DynamoDBDocumentClient;
+  private readonly rawClient: DynamoDBClient;
+  private readonly tableName: string;
 
-    this.insertConferenceStmt = this.db.prepare(
-      "INSERT INTO conferences (slug, name, sort_order, is_root, welcome_title, welcome_body, menu_title, menu_body, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    );
-    this.getConferenceStmt = this.db.prepare(
-      "SELECT id, slug, name, sort_order, is_root, welcome_title, welcome_body, menu_title, menu_body, updated_at, updated_by FROM conferences WHERE id = ?",
-    );
-    this.getRootConferenceStmt = this.db.prepare(
-      "SELECT id, slug, name, sort_order, is_root, welcome_title, welcome_body, menu_title, menu_body, updated_at, updated_by FROM conferences WHERE is_root = 1 ORDER BY id ASC LIMIT 1",
-    );
-    this.listConferencesStmt = this.db.prepare(
-      "SELECT id, slug, name, sort_order, is_root, welcome_title, welcome_body, menu_title, menu_body, updated_at, updated_by FROM conferences WHERE is_root = 0 ORDER BY sort_order ASC, id ASC",
-    );
-    this.getDefaultConferenceStmt = this.db.prepare(
-      "SELECT id, slug, name, sort_order, is_root, welcome_title, welcome_body, menu_title, menu_body, updated_at, updated_by FROM conferences WHERE is_root = 0 ORDER BY sort_order ASC, id ASC LIMIT 1",
-    );
-    this.getMaxConferenceSortOrderStmt = this.db.prepare(
-      "SELECT MAX(sort_order) AS max_sort FROM conferences WHERE is_root = 0",
-    );
-    this.updateConferenceWelcomeStmt = this.db.prepare(
-      "UPDATE conferences SET welcome_title = ?, welcome_body = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-    );
-    this.updateConferenceMenuStmt = this.db.prepare(
-      "UPDATE conferences SET menu_title = ?, menu_body = ?, updated_at = ?, updated_by = ? WHERE id = ?",
-    );
-    this.updateConferenceNameStmt = this.db.prepare(
-      "UPDATE conferences SET name = ?, updated_at = ?, updated_by = ? WHERE id = ? AND is_root = 0",
-    );
-    this.deleteConferenceStmt = this.db.prepare("DELETE FROM conferences WHERE id = ? AND is_root = 0");
-
-    this.countMenuItemsStmt = this.db.prepare("SELECT COUNT(*) AS count FROM conference_menu_items WHERE conference_id = ?");
-    this.listMenuItemsStmt = this.db.prepare(
-      "SELECT id, conference_id, label, display_no, display_type, action_type, action_ref, body, sort_order, hidden, updated_at, updated_by FROM conference_menu_items WHERE conference_id = ? ORDER BY sort_order ASC, id ASC",
-    );
-    this.getMenuItemStmt = this.db.prepare(
-      "SELECT id, conference_id, label, display_no, display_type, action_type, action_ref, body, sort_order, hidden, updated_at, updated_by FROM conference_menu_items WHERE id = ? AND conference_id = ?",
-    );
-    this.insertMenuItemStmt = this.db.prepare(
-      "INSERT INTO conference_menu_items (conference_id, label, display_no, display_type, action_type, action_ref, body, sort_order, hidden, enabled, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    );
-    this.deleteMenuItemStmt = this.db.prepare("DELETE FROM conference_menu_items WHERE id = ? AND conference_id = ?");
-    this.updateMenuItemHiddenStmt = this.db.prepare(
-      "UPDATE conference_menu_items SET hidden = ?, enabled = ?, updated_at = ?, updated_by = ? WHERE id = ? AND conference_id = ?",
-    );
-    this.updateMenuItemMetaStmt = this.db.prepare(
-      "UPDATE conference_menu_items SET label = ?, display_no = ?, display_type = ?, updated_at = ?, updated_by = ? WHERE id = ? AND conference_id = ?",
-    );
-    this.updateMenuItemContentStmt = this.db.prepare(
-      "UPDATE conference_menu_items SET action_ref = ?, body = ?, updated_at = ?, updated_by = ? WHERE id = ? AND conference_id = ?",
-    );
-    this.updateMenuItemSortOrderStmt = this.db.prepare(
-      "UPDATE conference_menu_items SET sort_order = ?, updated_at = ?, updated_by = ? WHERE id = ? AND conference_id = ?",
-    );
-    this.deleteMenuItemsByConferenceStmt = this.db.prepare("DELETE FROM conference_menu_items WHERE conference_id = ?");
-
-    this.countBoardsByConferenceStmt = this.db.prepare("SELECT COUNT(*) AS count FROM boards WHERE conference_id = ?");
-    this.getMaxBoardSortOrderStmt = this.db.prepare("SELECT MAX(sort_order) AS max_sort FROM boards WHERE conference_id = ?");
-    this.insertBoardStmt = this.db.prepare("INSERT INTO boards (name, sort_order, conference_id) VALUES (?, ?, ?)");
-    this.getBoardStmt = this.db.prepare("SELECT id, name, sort_order, conference_id FROM boards WHERE id = ?");
-    this.listBoardsByConferenceStmt = this.db.prepare(
-      "SELECT id, name, sort_order, conference_id FROM boards WHERE conference_id = ? ORDER BY sort_order ASC, id ASC",
-    );
-    this.updateBoardsConferenceStmt = this.db.prepare(
-      "UPDATE boards SET conference_id = ? WHERE conference_id IS NULL OR conference_id = 0",
-    );
-    this.updateBoardNameStmt = this.db.prepare("UPDATE boards SET name = ? WHERE id = ? AND conference_id = ?");
-    this.deleteBoardStmt = this.db.prepare("DELETE FROM boards WHERE id = ? AND conference_id = ?");
-    this.deleteBoardsByConferenceStmt = this.db.prepare("DELETE FROM boards WHERE conference_id = ?");
-
-    this.listPostsStmt = this.db.prepare(
-      "SELECT id, title, author, created_at FROM posts WHERE board_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-    );
-    this.getPostStmt = this.db.prepare(
-      "SELECT id, board_id, title, body, author, created_at FROM posts WHERE id = ?",
-    );
-    this.insertPostStmt = this.db.prepare(
-      "INSERT INTO posts (board_id, title, body, author, created_at) VALUES (?, ?, ?, ?, ?)",
-    );
-    this.deletePostsByBoardStmt = this.db.prepare("DELETE FROM posts WHERE board_id = ?");
-    this.deletePostsByConferenceStmt = this.db.prepare(
-      "DELETE FROM posts WHERE board_id IN (SELECT id FROM boards WHERE conference_id = ?)",
-    );
-
-    this.seedDefaults();
+  constructor(options: {
+    tableName: string;
+    region: string;
+    endpoint?: string;
+  }) {
+    console.log("options", options);
+    this.rawClient = new DynamoDBClient({
+      region: options.region,
+      endpoint: options.endpoint,
+    });
+    this.client = DynamoDBDocumentClient.from(this.rawClient, {
+      marshallOptions: { removeUndefinedValues: true },
+    });
+    this.tableName = options.tableName;
   }
 
-  private migrate() {
-    this.db.exec(`
-      PRAGMA journal_mode = WAL;
-
-      CREATE TABLE IF NOT EXISTS conferences (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        slug TEXT,
-        name TEXT NOT NULL,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        is_root INTEGER NOT NULL DEFAULT 0,
-        welcome_title TEXT NOT NULL DEFAULT '',
-        welcome_body TEXT NOT NULL DEFAULT '',
-        menu_title TEXT NOT NULL DEFAULT '',
-        menu_body TEXT NOT NULL DEFAULT '',
-        updated_at TEXT NOT NULL,
-        updated_by TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS conference_menu_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        conference_id INTEGER NOT NULL,
-        label TEXT NOT NULL,
-        display_no TEXT NOT NULL DEFAULT '',
-        display_type TEXT NOT NULL DEFAULT '',
-        action_type TEXT NOT NULL,
-        action_ref TEXT NOT NULL,
-        body TEXT NOT NULL DEFAULT '',
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        hidden INTEGER NOT NULL DEFAULT 0,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        updated_at TEXT NOT NULL,
-        updated_by TEXT NOT NULL,
-        FOREIGN KEY(conference_id) REFERENCES conferences(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS boards (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        conference_id INTEGER
-      );
-
-      CREATE TABLE IF NOT EXISTS posts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        board_id INTEGER NOT NULL,
-        title TEXT NOT NULL,
-        body TEXT NOT NULL,
-        author TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(board_id) REFERENCES boards(id)
-      );
-    `);
-
-    const boardColumns = this.db.prepare("PRAGMA table_info(boards)").all() as { name: string }[];
-    const hasConferenceId = boardColumns.some((column) => column.name === "conference_id");
-    if (!hasConferenceId) {
-      this.db.exec("ALTER TABLE boards ADD COLUMN conference_id INTEGER");
-    }
-
-    const conferenceColumns = this.db.prepare("PRAGMA table_info(conferences)").all() as { name: string }[];
-    const hasIsRoot = conferenceColumns.some((column) => column.name === "is_root");
-    if (!hasIsRoot) {
-      this.db.exec("ALTER TABLE conferences ADD COLUMN is_root INTEGER NOT NULL DEFAULT 0");
-    }
-    const hasMenuBody = conferenceColumns.some((column) => column.name === "menu_body");
-    if (!hasMenuBody) {
-      this.db.exec("ALTER TABLE conferences ADD COLUMN menu_body TEXT NOT NULL DEFAULT ''");
-    }
-
-    const menuColumns = this.db.prepare("PRAGMA table_info(conference_menu_items)").all() as { name: string }[];
-    const hasDisplayNo = menuColumns.some((column) => column.name === "display_no");
-    if (!hasDisplayNo) {
-      this.db.exec("ALTER TABLE conference_menu_items ADD COLUMN display_no TEXT NOT NULL DEFAULT ''");
-    }
-    const hasDisplayType = menuColumns.some((column) => column.name === "display_type");
-    if (!hasDisplayType) {
-      this.db.exec("ALTER TABLE conference_menu_items ADD COLUMN display_type TEXT NOT NULL DEFAULT ''");
-    }
-    const hasHidden = menuColumns.some((column) => column.name === "hidden");
-    if (!hasHidden) {
-      this.db.exec("ALTER TABLE conference_menu_items ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0");
-      this.db.exec("UPDATE conference_menu_items SET hidden = CASE WHEN enabled = 0 THEN 1 ELSE 0 END");
-    }
-
-    this.db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_boards_conference_sort
-      ON boards(conference_id, sort_order, id);
-
-      CREATE INDEX IF NOT EXISTS idx_menu_items_conference_sort
-      ON conference_menu_items(conference_id, sort_order, id);
-
-      CREATE INDEX IF NOT EXISTS idx_posts_board_id_id_desc
-      ON posts(board_id, id DESC);
-    `);
+  async init(): Promise<void> {
+    await this.seedDefaults();
   }
 
-  private seedDefaults() {
-    const now = new Date().toISOString();
+  private async seedDefaults(): Promise<void> {
+    const now = nowIso();
 
-    const rootRow = this.getRootConferenceStmt.get() as DbConferenceRow | undefined;
-    let rootId = rootRow?.id;
-
+    const root = await this.getRootConference();
+    let rootId = root?.id;
     if (!rootId) {
-      const result = this.insertConferenceStmt.run(
-        "root",
-        "Lobby",
-        0,
-        1,
-        "Welcome",
-        "",
-        "Menu",
-        "",
-        now,
-        "system",
-      ) as { lastInsertRowid: number | bigint };
-      rootId = Number(result.lastInsertRowid);
+      rootId = "0";
+      await this.putConferenceItem({
+        id: rootId,
+        slug: "root",
+        name: "Lobby",
+        isRoot: true,
+        welcomeTitle: "Welcome",
+        welcomeBody: "",
+        menuTitle: "Menu",
+        menuBody: "",
+        updatedAt: now,
+        updatedBy: "system",
+      });
     }
 
-    const defaultConferenceRow = this.getDefaultConferenceStmt.get() as DbConferenceRow | undefined;
-    let conferenceId = defaultConferenceRow?.id;
-
+    const defaultConference = await this.getDefaultConference();
+    let conferenceId = defaultConference?.id;
     if (!conferenceId) {
-      const result = this.insertConferenceStmt.run(
-        "main",
-        "Main",
-        1,
-        0,
-        "Welcome",
-        "",
-        "Menu",
-        "",
-        now,
-        "system",
-      ) as { lastInsertRowid: number | bigint };
-      conferenceId = Number(result.lastInsertRowid);
+      conferenceId = await this.nextConferenceId();
+      await this.putConferenceItem({
+        id: conferenceId,
+        slug: "main",
+        name: "Main",
+        isRoot: false,
+        welcomeTitle: "Welcome",
+        welcomeBody: "",
+        menuTitle: "Menu",
+        menuBody: "",
+        updatedAt: now,
+        updatedBy: "system",
+      });
     }
 
-    this.updateBoardsConferenceStmt.run(conferenceId);
-
-    const boardCountRow = this.countBoardsByConferenceStmt.get(conferenceId) as { count: number } | undefined;
-    const boardCount = boardCountRow?.count ?? 0;
-    if (boardCount === 0) {
-      this.insertBoardStmt.run("General", 1, conferenceId);
+    const boards = await this.listBoards(conferenceId);
+    if (boards.length === 0) {
+      await this.createBoard({ conferenceId, name: "General" });
     }
 
-    const menuCountRow = this.countMenuItemsStmt.get(conferenceId) as { count: number } | undefined;
-    const menuCount = menuCountRow?.count ?? 0;
-    if (menuCount === 0) {
-      const boards = this.listBoards(conferenceId);
-      let sortOrder = 1;
-      for (const board of boards) {
-        this.insertMenuItemStmt.run(
+    const menuItems = await this.listMenuItems(conferenceId);
+    if (menuItems.length === 0) {
+      const updatedBoards = await this.listBoards(conferenceId);
+      for (const board of updatedBoards) {
+        await this.createMenuItem({
           conferenceId,
-          board.name,
-          "",
-          "",
-          "board",
-          String(board.id),
-          "",
-          sortOrder,
-          0,
-          1,
-          now,
-          "system",
-        );
-        sortOrder += 1;
+          label: board.name,
+          displayNo: "",
+          displayType: "",
+          actionType: "board",
+          actionRef: board.id,
+          body: "",
+          hidden: false,
+          updatedBy: "system",
+        });
       }
     }
 
     if (rootId) {
-      const rootMenuCountRow = this.countMenuItemsStmt.get(rootId) as { count: number } | undefined;
-      const rootMenuCount = rootMenuCountRow?.count ?? 0;
-      if (rootMenuCount === 0) {
-        const conferences = this.listConferences();
+      const rootMenuItems = await this.listMenuItems(rootId);
+      if (rootMenuItems.length === 0) {
+        const conferences = await this.listConferences();
         if (conferences.length > 0) {
           const first = conferences[0]!;
-          this.insertMenuItemStmt.run(
-            rootId,
-            first.name,
-            "",
-            "",
-            "conference",
-            String(first.id),
-            "",
-            1,
-            0,
-            1,
-            now,
-            "system",
-          );
+          await this.createMenuItem({
+            conferenceId: rootId,
+            label: first.name,
+            displayNo: "",
+            displayType: "",
+            actionType: "conference",
+            actionRef: first.id,
+            body: "",
+            hidden: false,
+            updatedBy: "system",
+          });
         }
       }
     }
   }
 
-  listConferences(): Conference[] {
-    const rows = this.listConferencesStmt.all() as DbConferenceRow[];
-    return rows.map((row) => ({
-      id: row.id,
-      slug: row.slug ?? null,
-      name: row.name,
-      sortOrder: row.sort_order,
-      isRoot: row.is_root === 1,
-      welcomeTitle: row.welcome_title,
-      welcomeBody: row.welcome_body,
-      menuTitle: row.menu_title,
-      menuBody: row.menu_body,
-      updatedAt: row.updated_at,
-      updatedBy: row.updated_by,
-    }));
-  }
-
-  getConference(conferenceId: number): Conference | null {
-    const row = this.getConferenceStmt.get(conferenceId) as DbConferenceRow | undefined;
-    if (!row) return null;
-    return {
-      id: row.id,
-      slug: row.slug ?? null,
-      name: row.name,
-      sortOrder: row.sort_order,
-      isRoot: row.is_root === 1,
-      welcomeTitle: row.welcome_title,
-      welcomeBody: row.welcome_body,
-      menuTitle: row.menu_title,
-      menuBody: row.menu_body,
-      updatedAt: row.updated_at,
-      updatedBy: row.updated_by,
+  private async putConferenceItem(args: {
+    id: string;
+    slug: string | null;
+    name: string;
+    isRoot: boolean;
+    welcomeTitle: string;
+    welcomeBody: string;
+    menuTitle: string;
+    menuBody: string;
+    updatedAt: string;
+    updatedBy: string;
+  }): Promise<void> {
+    const item: DdbConferenceItem = {
+      PK: conferenceItemPk(),
+      SK: conferenceItemSk(args.id),
+      entityType: "CONFERENCE",
+      id: args.id,
+      slug: args.slug,
+      name: args.name,
+      is_root: args.isRoot ? 1 : 0,
+      welcome_title: args.welcomeTitle,
+      welcome_body: args.welcomeBody,
+      menu_title: args.menuTitle,
+      menu_body: args.menuBody,
+      updated_at: args.updatedAt,
+      updated_by: args.updatedBy,
     };
-  }
-
-  getRootConference(): Conference | null {
-    const row = this.getRootConferenceStmt.get() as DbConferenceRow | undefined;
-    if (!row) return null;
-    return {
-      id: row.id,
-      slug: row.slug ?? null,
-      name: row.name,
-      sortOrder: row.sort_order,
-      isRoot: row.is_root === 1,
-      welcomeTitle: row.welcome_title,
-      welcomeBody: row.welcome_body,
-      menuTitle: row.menu_title,
-      menuBody: row.menu_body,
-      updatedAt: row.updated_at,
-      updatedBy: row.updated_by,
-    };
-  }
-
-  updateConferenceWelcome(args: { conferenceId: number; title: string; body: string; updatedBy: string }): void {
-    const updatedAt = new Date().toISOString();
-    this.updateConferenceWelcomeStmt.run(args.title, args.body, updatedAt, args.updatedBy, args.conferenceId);
-  }
-
-  updateConferenceMenu(args: { conferenceId: number; title: string; body: string; updatedBy: string }): void {
-    const updatedAt = new Date().toISOString();
-    this.updateConferenceMenuStmt.run(args.title, args.body, updatedAt, args.updatedBy, args.conferenceId);
-  }
-
-  createConference(args: { name: string; updatedBy: string }): number {
-    const updatedAt = new Date().toISOString();
-    const row = this.getMaxConferenceSortOrderStmt.get() as { max_sort: number | null } | undefined;
-    const nextSort = (row?.max_sort ?? 0) + 1;
-    const result = this.insertConferenceStmt.run(
-      null,
-      args.name,
-      nextSort,
-      0,
-      "Welcome",
-      "",
-      "Menu",
-      "",
-      updatedAt,
-      args.updatedBy,
-    ) as { lastInsertRowid: number | bigint };
-    return Number(result.lastInsertRowid);
-  }
-
-  renameConference(args: { conferenceId: number; name: string; updatedBy: string }): boolean {
-    const updatedAt = new Date().toISOString();
-    const result = this.updateConferenceNameStmt.run(args.name, updatedAt, args.updatedBy, args.conferenceId) as {
-      changes: number;
-    };
-    return result.changes > 0;
-  }
-
-  deleteConference(args: { conferenceId: number }): boolean {
-    const conference = this.getConference(args.conferenceId);
-    if (!conference || conference.isRoot) return false;
-    this.db.exec("BEGIN");
     try {
-      this.deleteMenuItemsByConferenceStmt.run(args.conferenceId);
-      this.deletePostsByConferenceStmt.run(args.conferenceId);
-      this.deleteBoardsByConferenceStmt.run(args.conferenceId);
-      const result = this.deleteConferenceStmt.run(args.conferenceId) as { changes: number };
-      this.db.exec("COMMIT");
-      return result.changes > 0;
+      await this.client.send(
+        new PutCommand({
+          TableName: this.tableName,
+          Item: item,
+          ConditionExpression: "attribute_not_exists(PK)",
+        }),
+      );
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      if (
+        error instanceof Error &&
+        "name" in error &&
+        error.name === "ConditionalCheckFailedException"
+      )
+        return;
       throw error;
     }
   }
 
-  listMenuItems(conferenceId: number): ConferenceMenuItem[] {
-    const rows = this.listMenuItemsStmt.all(conferenceId) as DbMenuItemRow[];
-    return rows.map((row) => ({
-      id: row.id,
-      conferenceId: row.conference_id,
-      label: row.label,
-      displayNo: row.display_no,
-      displayType: row.display_type,
-      actionType: row.action_type as ConferenceMenuItem["actionType"],
-      actionRef: row.action_ref,
-      body: row.body,
-      sortOrder: row.sort_order,
-      hidden: Boolean(row.hidden),
-      updatedAt: row.updated_at,
-      updatedBy: row.updated_by,
-    }));
+  private async getDefaultConference(): Promise<Conference | null> {
+    const conferences = await this.listConferences();
+    return conferences.length > 0 ? conferences[0]! : null;
   }
 
-  getMenuItem(args: { conferenceId: number; menuItemId: number }): ConferenceMenuItem | null {
-    const row = this.getMenuItemStmt.get(args.menuItemId, args.conferenceId) as DbMenuItemRow | undefined;
-    if (!row) return null;
-    return {
-      id: row.id,
-      conferenceId: row.conference_id,
-      label: row.label,
-      displayNo: row.display_no,
-      displayType: row.display_type,
-      actionType: row.action_type as ConferenceMenuItem["actionType"],
-      actionRef: row.action_ref,
-      body: row.body,
-      sortOrder: row.sort_order,
-      hidden: Boolean(row.hidden),
-      updatedAt: row.updated_at,
-      updatedBy: row.updated_by,
-    };
+  private async queryAllItems<T>(params: {
+    TableName: string;
+    IndexName?: string;
+    KeyConditionExpression: string;
+    ExpressionAttributeValues: Record<string, unknown>;
+    ExpressionAttributeNames?: Record<string, string>;
+    FilterExpression?: string;
+    ScanIndexForward?: boolean;
+  }): Promise<T[]> {
+    const items: T[] = [];
+    let lastKey: Record<string, unknown> | undefined;
+    do {
+      const result = await this.client.send(
+        new QueryCommand({
+          ...params,
+          ExclusiveStartKey: lastKey,
+        }),
+      );
+      const pageItems = (result.Items ?? []) as T[];
+      items.push(...pageItems);
+      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+    } while (lastKey);
+    return items;
   }
 
-  createMenuItem(args: {
-    conferenceId: number;
+  private async batchDelete(
+    keys: Array<{ PK: string; SK: string }>,
+  ): Promise<void> {
+    const batches: Array<Array<{ PK: string; SK: string }>> = [];
+    for (let i = 0; i < keys.length; i += 25) {
+      batches.push(keys.slice(i, i + 25));
+    }
+
+    for (const batch of batches) {
+      let unprocessed: DdbWriteRequest[] = batch.map((key) => ({
+        DeleteRequest: { Key: key },
+      }));
+      let attempts = 0;
+      while (unprocessed.length > 0 && attempts < 5) {
+        const result = await this.client.send(
+          new BatchWriteCommand({
+            RequestItems: {
+              [this.tableName]: unprocessed,
+            },
+          }),
+        );
+        unprocessed =
+          (result.UnprocessedItems?.[this.tableName] as DdbWriteRequest[]) ??
+          [];
+        attempts += 1;
+      }
+    }
+  }
+
+  private async listMenuItemRecords(
+    conferenceId: string,
+  ): Promise<DdbMenuItemRecord[]> {
+    return this.queryAllItems<DdbMenuItemRecord>({
+      TableName: this.tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": conferenceMenuPk(conferenceId),
+        ":prefix": "MENU#",
+      },
+      ScanIndexForward: true,
+    });
+  }
+
+  private async nextConferenceId(): Promise<string> {
+    const items = await this.queryAllItems<DdbConferenceItem>({
+      TableName: this.tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": conferenceItemPk(),
+        ":prefix": "CONF#",
+      },
+      ScanIndexForward: true,
+    });
+    let max = 0;
+    for (const item of items) {
+      if (item.id === "0") continue;
+      const num = Number(item.id);
+      if (Number.isFinite(num) && num > max) max = Math.trunc(num);
+    }
+    return String(max + 1);
+  }
+
+  private async nextMenuItemId(conferenceId: string): Promise<string> {
+    const latest = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        ExpressionAttributeValues: {
+          ":pk": conferenceMenuPk(conferenceId),
+          ":prefix": "MENU#",
+        },
+        ScanIndexForward: false,
+        Limit: 1,
+      }),
+    );
+    const max = Number(
+      (latest.Items?.[0] as DdbMenuItemRecord | undefined)?.menu_item_id,
+    );
+    const next = Number.isFinite(max) && max > 0 ? Math.trunc(max) + 1 : 1;
+    return String(next);
+  }
+
+  private async fetchMenuItemRecord(
+    conferenceId: string,
+    menuItemId: string,
+  ): Promise<DdbMenuItemRecord | null> {
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        FilterExpression: "menu_item_id = :menuId",
+        ExpressionAttributeValues: {
+          ":pk": conferenceMenuPk(conferenceId),
+          ":prefix": "MENU#",
+          ":menuId": menuItemId,
+        },
+        Limit: 1,
+      }),
+    );
+    const item = (result.Items?.[0] as DdbMenuItemRecord | undefined) ?? null;
+    return item;
+  }
+
+  async listConferences(): Promise<Conference[]> {
+    const items = await this.queryAllItems<DdbConferenceItem>({
+      TableName: this.tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      FilterExpression: "is_root = :zero",
+      ExpressionAttributeValues: {
+        ":pk": conferenceItemPk(),
+        ":prefix": "CONF#",
+        ":zero": 0,
+      },
+      ScanIndexForward: true,
+    });
+    return items.map(mapConferenceItem);
+  }
+
+  async getConference(conferenceId: string): Promise<Conference | null> {
+    const result = await this.client.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: {
+          PK: conferenceItemPk(),
+          SK: conferenceItemSk(conferenceId),
+        },
+      }),
+    );
+    const item = result.Item as DdbConferenceItem | undefined;
+    return item ? mapConferenceItem(item) : null;
+  }
+
+  async getRootConference(): Promise<Conference | null> {
+    console.log("table", this.tableName);
+    const result = await this.client.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { PK: conferenceItemPk(), SK: conferenceItemSk("0") },
+      }),
+    );
+    const item = result.Item as DdbConferenceItem | undefined;
+    return item ? mapConferenceItem(item) : null;
+  }
+
+  async updateConferenceWelcome(args: {
+    conferenceId: string;
+    title: string;
+    body: string;
+    updatedBy: string;
+  }): Promise<void> {
+    const updatedAt = nowIso();
+    await this.client.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: {
+          PK: conferenceItemPk(),
+          SK: conferenceItemSk(args.conferenceId),
+        },
+        UpdateExpression:
+          "SET welcome_title = :title, welcome_body = :body, updated_at = :updatedAt, updated_by = :updatedBy",
+        ExpressionAttributeValues: {
+          ":title": args.title,
+          ":body": args.body,
+          ":updatedAt": updatedAt,
+          ":updatedBy": args.updatedBy,
+        },
+      }),
+    );
+  }
+
+  async updateConferenceMenu(args: {
+    conferenceId: string;
+    title: string;
+    body: string;
+    updatedBy: string;
+  }): Promise<void> {
+    const updatedAt = nowIso();
+    await this.client.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: {
+          PK: conferenceItemPk(),
+          SK: conferenceItemSk(args.conferenceId),
+        },
+        UpdateExpression:
+          "SET menu_title = :title, menu_body = :body, updated_at = :updatedAt, updated_by = :updatedBy",
+        ExpressionAttributeValues: {
+          ":title": args.title,
+          ":body": args.body,
+          ":updatedAt": updatedAt,
+          ":updatedBy": args.updatedBy,
+        },
+      }),
+    );
+  }
+
+  async createConference(args: {
+    name: string;
+    updatedBy: string;
+  }): Promise<string> {
+    const id = await this.nextConferenceId();
+    const updatedAt = nowIso();
+
+    await this.client.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: {
+          PK: conferenceItemPk(),
+          SK: conferenceItemSk(id),
+          entityType: "CONFERENCE",
+          id,
+          slug: null,
+          name: args.name,
+          is_root: 0,
+          welcome_title: "Welcome",
+          welcome_body: "",
+          menu_title: "Menu",
+          menu_body: "",
+          updated_at: updatedAt,
+          updated_by: args.updatedBy,
+        } as DdbConferenceItem,
+        ConditionExpression: "attribute_not_exists(PK)",
+      }),
+    );
+    return id;
+  }
+
+  async renameConference(args: {
+    conferenceId: string;
+    name: string;
+    updatedBy: string;
+  }): Promise<boolean> {
+    const updatedAt = nowIso();
+    try {
+      await this.client.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: {
+            PK: conferenceItemPk(),
+            SK: conferenceItemSk(args.conferenceId),
+          },
+          UpdateExpression:
+            "SET #name = :name, updated_at = :updatedAt, updated_by = :updatedBy",
+          ConditionExpression: "attribute_exists(PK) AND is_root = :zero",
+          ExpressionAttributeNames: { "#name": "name" },
+          ExpressionAttributeValues: {
+            ":name": args.name,
+            ":updatedAt": updatedAt,
+            ":updatedBy": args.updatedBy,
+            ":zero": 0,
+          },
+        }),
+      );
+      return true;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "name" in error &&
+        error.name === "ConditionalCheckFailedException"
+      )
+        return false;
+      throw error;
+    }
+  }
+
+  async deleteConference(args: { conferenceId: string }): Promise<boolean> {
+    const conference = await this.getConference(args.conferenceId);
+    if (!conference || conference.isRoot) return false;
+
+    const menuItems = await this.listMenuItemRecords(args.conferenceId);
+    if (menuItems.length > 0) {
+      await this.batchDelete(
+        menuItems.map((item) => ({ PK: item.PK, SK: item.SK })),
+      );
+    }
+
+    const boards = await this.listBoards(args.conferenceId);
+    for (const board of boards) {
+      await this.deleteBoard({
+        conferenceId: args.conferenceId,
+        boardId: board.id,
+      });
+    }
+
+    await this.client.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: {
+          PK: conferenceItemPk(),
+          SK: conferenceItemSk(args.conferenceId),
+        },
+      }),
+    );
+    return true;
+  }
+
+  async listMenuItems(conferenceId: string): Promise<ConferenceMenuItem[]> {
+    const items = await this.listMenuItemRecords(conferenceId);
+    return items.map(mapMenuItem);
+  }
+
+  async getMenuItem(args: {
+    conferenceId: string;
+    menuItemId: string;
+  }): Promise<ConferenceMenuItem | null> {
+    const item = await this.fetchMenuItemRecord(
+      args.conferenceId,
+      args.menuItemId,
+    );
+    return item ? mapMenuItem(item) : null;
+  }
+
+  async createMenuItem(args: {
+    conferenceId: string;
     label: string;
     displayNo: string;
     displayType: string;
     actionType: ConferenceMenuItem["actionType"];
     actionRef: string;
     body: string;
-    sortOrder: number;
     hidden: boolean;
     updatedBy: string;
-  }): number {
-    const updatedAt = new Date().toISOString();
-    const result = this.insertMenuItemStmt.run(
+  }): Promise<string> {
+    const id = await this.nextMenuItemId(args.conferenceId);
+    const updatedAt = nowIso();
+    const item: DdbMenuItemRecord = {
+      PK: conferenceMenuPk(args.conferenceId),
+      SK: menuSk(id),
+      entityType: "MENU_ITEM",
+      conference_id: args.conferenceId,
+      menu_item_id: id,
+      label: args.label,
+      display_no: args.displayNo,
+      display_type: args.displayType,
+      action_type: args.actionType,
+      action_ref: args.actionRef,
+      body: args.body,
+      hidden: args.hidden ? 1 : 0,
+      enabled: args.hidden ? 0 : 1,
+      updated_at: updatedAt,
+      updated_by: args.updatedBy,
+    };
+    await this.client.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: item,
+        ConditionExpression:
+          "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+      }),
+    );
+    return id;
+  }
+
+  async deleteMenuItem(args: {
+    conferenceId: string;
+    menuItemId: string;
+  }): Promise<boolean> {
+    const record = await this.fetchMenuItemRecord(
       args.conferenceId,
-      args.label,
-      args.displayNo,
-      args.displayType,
-      args.actionType,
-      args.actionRef,
-      args.body,
-      args.sortOrder,
-      args.hidden ? 1 : 0,
-      args.hidden ? 0 : 1,
-      updatedAt,
-      args.updatedBy,
-    ) as { lastInsertRowid: number | bigint };
-    return Number(result.lastInsertRowid);
-  }
-
-  deleteMenuItem(args: { conferenceId: number; menuItemId: number }): boolean {
-    const result = this.deleteMenuItemStmt.run(args.menuItemId, args.conferenceId) as { changes: number };
-    return result.changes > 0;
-  }
-
-  setMenuItemHidden(args: { conferenceId: number; menuItemId: number; hidden: boolean; updatedBy: string }): boolean {
-    const updatedAt = new Date().toISOString();
-    const result = this.updateMenuItemHiddenStmt.run(
-      args.hidden ? 1 : 0,
-      args.hidden ? 0 : 1,
-      updatedAt,
-      args.updatedBy,
       args.menuItemId,
-      args.conferenceId,
-    ) as { changes: number };
-    return result.changes > 0;
+    );
+    if (!record) return false;
+    await this.client.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: { PK: record.PK, SK: record.SK },
+      }),
+    );
+    return true;
   }
 
-  updateMenuItemMeta(args: {
-    conferenceId: number;
-    menuItemId: number;
+  async setMenuItemHidden(args: {
+    conferenceId: string;
+    menuItemId: string;
+    hidden: boolean;
+    updatedBy: string;
+  }): Promise<boolean> {
+    const record = await this.fetchMenuItemRecord(
+      args.conferenceId,
+      args.menuItemId,
+    );
+    if (!record) return false;
+    const updatedAt = nowIso();
+    await this.client.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { PK: record.PK, SK: record.SK },
+        UpdateExpression:
+          "SET hidden = :hidden, enabled = :enabled, updated_at = :updatedAt, updated_by = :updatedBy",
+        ExpressionAttributeValues: {
+          ":hidden": args.hidden ? 1 : 0,
+          ":enabled": args.hidden ? 0 : 1,
+          ":updatedAt": updatedAt,
+          ":updatedBy": args.updatedBy,
+        },
+      }),
+    );
+    return true;
+  }
+
+  async updateMenuItemMeta(args: {
+    conferenceId: string;
+    menuItemId: string;
     label: string;
     displayNo: string;
     displayType: string;
     updatedBy: string;
-  }): boolean {
-    const updatedAt = new Date().toISOString();
-    const result = this.updateMenuItemMetaStmt.run(
-      args.label,
-      args.displayNo,
-      args.displayType,
-      updatedAt,
-      args.updatedBy,
-      args.menuItemId,
+  }): Promise<boolean> {
+    const record = await this.fetchMenuItemRecord(
       args.conferenceId,
-    ) as { changes: number };
-    return result.changes > 0;
+      args.menuItemId,
+    );
+    if (!record) return false;
+    const updatedAt = nowIso();
+    await this.client.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { PK: record.PK, SK: record.SK },
+        UpdateExpression:
+          "SET label = :label, display_no = :displayNo, display_type = :displayType, updated_at = :updatedAt, updated_by = :updatedBy",
+        ExpressionAttributeValues: {
+          ":label": args.label,
+          ":displayNo": args.displayNo,
+          ":displayType": args.displayType,
+          ":updatedAt": updatedAt,
+          ":updatedBy": args.updatedBy,
+        },
+      }),
+    );
+    return true;
   }
 
-  updateMenuItemContent(args: {
-    conferenceId: number;
-    menuItemId: number;
+  async updateMenuItemContent(args: {
+    conferenceId: string;
+    menuItemId: string;
     actionRef: string;
     body: string;
     updatedBy: string;
-  }): boolean {
-    const updatedAt = new Date().toISOString();
-    const result = this.updateMenuItemContentStmt.run(
-      args.actionRef,
-      args.body,
-      updatedAt,
-      args.updatedBy,
-      args.menuItemId,
+  }): Promise<boolean> {
+    const record = await this.fetchMenuItemRecord(
       args.conferenceId,
-    ) as { changes: number };
-    return result.changes > 0;
+      args.menuItemId,
+    );
+    if (!record) return false;
+    const updatedAt = nowIso();
+    await this.client.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { PK: record.PK, SK: record.SK },
+        UpdateExpression:
+          "SET action_ref = :actionRef, body = :body, updated_at = :updatedAt, updated_by = :updatedBy",
+        ExpressionAttributeValues: {
+          ":actionRef": args.actionRef,
+          ":body": args.body,
+          ":updatedAt": updatedAt,
+          ":updatedBy": args.updatedBy,
+        },
+      }),
+    );
+    return true;
   }
 
-  setMenuItemOrder(args: { conferenceId: number; orderedIds: number[]; updatedBy: string }): void {
-    const updatedAt = new Date().toISOString();
-    this.db.exec("BEGIN");
-    try {
-      args.orderedIds.forEach((id, index) => {
-        this.updateMenuItemSortOrderStmt.run(index + 1, updatedAt, args.updatedBy, id, args.conferenceId);
-      });
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+  async getBoard(conferenceId: string, boardId: string): Promise<Board | null> {
+    const result = await this.client.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { PK: boardPk(conferenceId, boardId), SK: "BOARD" },
+      }),
+    );
+    const item = result.Item as DdbBoardItem | undefined;
+    return item ? mapBoardItem(item) : null;
   }
 
-  getBoard(boardId: number): Board | null {
-    const row = this.getBoardStmt.get(boardId) as DbBoardRow | undefined;
-    if (!row) return null;
-    const conferenceId = typeof row.conference_id === "number" ? row.conference_id : 0;
-    return { id: row.id, name: row.name, sortOrder: row.sort_order, conferenceId };
+  async listBoards(conferenceId: string): Promise<Board[]> {
+    const items = await this.queryAllItems<DdbBoardItem>({
+      TableName: this.tableName,
+      IndexName: GS1_NAME,
+      KeyConditionExpression: "GS1PK = :pk AND begins_with(GS1SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": boardGsPk(conferenceId),
+        ":prefix": "BOARD#",
+      },
+      ScanIndexForward: true,
+    });
+    return items.map(mapBoardItem);
   }
 
-  listBoards(conferenceId: number): Board[] {
-    const rows = this.listBoardsByConferenceStmt.all(conferenceId) as DbBoardRow[];
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      sortOrder: row.sort_order,
-      conferenceId: typeof row.conference_id === "number" ? row.conference_id : conferenceId,
-    }));
-  }
-
-  createBoard(args: { conferenceId: number; name: string }): number {
-    const row = this.getMaxBoardSortOrderStmt.get(args.conferenceId) as { max_sort: number | null } | undefined;
-    const nextSort = (row?.max_sort ?? 0) + 1;
-    const result = this.insertBoardStmt.run(args.name, nextSort, args.conferenceId) as {
-      lastInsertRowid: number | bigint;
+  async createBoard(args: {
+    conferenceId: string;
+    name: string;
+  }): Promise<string> {
+    const id = generateUlid();
+    const item: DdbBoardItem = {
+      PK: boardPk(args.conferenceId, id),
+      SK: "BOARD",
+      GS1PK: boardGsPk(args.conferenceId),
+      GS1SK: boardGsSk(id),
+      entityType: "BOARD",
+      id,
+      name: args.name,
+      conference_id: args.conferenceId,
     };
-    return Number(result.lastInsertRowid);
+    await this.client.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: item,
+        ConditionExpression: "attribute_not_exists(PK)",
+      }),
+    );
+    return id;
   }
 
-  renameBoard(args: { conferenceId: number; boardId: number; name: string }): boolean {
-    const result = this.updateBoardNameStmt.run(args.name, args.boardId, args.conferenceId) as { changes: number };
-    return result.changes > 0;
+  async renameBoard(args: {
+    conferenceId: string;
+    boardId: string;
+    name: string;
+  }): Promise<boolean> {
+    const board = await this.getBoard(args.conferenceId, args.boardId);
+    if (!board || board.conferenceId !== args.conferenceId) return false;
+    await this.client.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { PK: boardPk(args.conferenceId, args.boardId), SK: "BOARD" },
+        UpdateExpression: "SET #name = :name",
+        ExpressionAttributeNames: { "#name": "name" },
+        ExpressionAttributeValues: { ":name": args.name },
+      }),
+    );
+    return true;
   }
 
-  deleteBoard(args: { conferenceId: number; boardId: number }): boolean {
-    this.db.exec("BEGIN");
-    try {
-      this.deletePostsByBoardStmt.run(args.boardId);
-      const result = this.deleteBoardStmt.run(args.boardId, args.conferenceId) as { changes: number };
-      this.db.exec("COMMIT");
-      return result.changes > 0;
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
+  async deleteBoard(args: {
+    conferenceId: string;
+    boardId: string;
+  }): Promise<boolean> {
+    const board = await this.getBoard(args.conferenceId, args.boardId);
+    if (!board || board.conferenceId !== args.conferenceId) return false;
+
+    const posts = await this.queryAllItems<DdbPostItem>({
+      TableName: this.tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": boardPk(args.conferenceId, args.boardId),
+        ":prefix": "POST#",
+      },
+    });
+    if (posts.length > 0) {
+      await this.batchDelete(
+        posts.map((post) => ({ PK: post.PK, SK: post.SK })),
+      );
     }
+
+    await this.client.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: { PK: boardPk(args.conferenceId, args.boardId), SK: "BOARD" },
+      }),
+    );
+    return true;
   }
 
-  listPosts(boardId: number, page: number, pageSize: number): PostSummary[] {
-    const offset = (page - 1) * pageSize;
-    const rows = this.listPostsStmt.all(boardId, pageSize, offset) as DbPostSummaryRow[];
+  async listPosts(args: ListPostsInput): Promise<PostsPage> {
+    const pageSize = Math.max(1, Math.trunc(args.pageSize));
+    const exclusiveStartKey = decodeCursor(args.cursor ?? null) ?? undefined;
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        ExpressionAttributeValues: {
+          ":pk": boardPk(args.conferenceId, args.boardId),
+          ":prefix": "POST#",
+        },
+        ScanIndexForward: false,
+        Limit: pageSize,
+        ExclusiveStartKey: exclusiveStartKey,
+      }),
+    );
 
-    return rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      author: row.author,
-      createdAt: row.created_at,
-    }));
-  }
-
-  getPost(postId: number): Post | null {
-    const row = this.getPostStmt.get(postId) as DbPostRow | undefined;
-    if (!row) return null;
+    const items = (result.Items ?? []) as DdbPostItem[];
+    const nextCursor = result.LastEvaluatedKey
+      ? encodeCursor(result.LastEvaluatedKey as Record<string, unknown>)
+      : null;
 
     return {
-      id: row.id,
-      boardId: row.board_id,
-      title: row.title,
-      body: row.body,
-      author: row.author,
-      createdAt: row.created_at,
+      posts: items.map(mapPostSummaryItem),
+      nextCursor,
     };
   }
 
-  createPost(args: { boardId: number; title: string; body: string; author: string }): number {
-    const createdAt = new Date().toISOString();
-    const result = this.insertPostStmt.run(args.boardId, args.title, args.body, args.author, createdAt) as {
-      lastInsertRowid: number | bigint;
-    };
-    return Number(result.lastInsertRowid);
+  async getPost(postId: string): Promise<Post | null> {
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        IndexName: GS1_NAME,
+        KeyConditionExpression: "GS1PK = :pk",
+        ExpressionAttributeValues: { ":pk": postGsPk(postId) },
+        Limit: 1,
+      }),
+    );
+    const item = result.Items?.[0] as DdbPostItem | undefined;
+    return item ? mapPostItem(item) : null;
   }
 
-  close() {
-    this.db.close();
+  async createPost(args: {
+    conferenceId: string;
+    boardId: string;
+    title: string;
+    body: string;
+    author: string;
+  }): Promise<string> {
+    const id = generateUlid();
+    const createdAt = nowIso();
+    const item: DdbPostItem = {
+      PK: boardPk(args.conferenceId, args.boardId),
+      SK: postSk(id),
+      GS1PK: postGsPk(id),
+      GS1SK: "POST",
+      entityType: "POST",
+      post_id: id,
+      board_id: args.boardId,
+      conference_id: args.conferenceId,
+      title: args.title,
+      body: args.body,
+      author: args.author,
+      created_at: createdAt,
+    };
+    await this.client.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: item,
+        ConditionExpression:
+          "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+      }),
+    );
+    return id;
+  }
+
+  async close(): Promise<void> {
+    this.rawClient.destroy();
   }
 }

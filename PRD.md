@@ -11,8 +11,8 @@ Scope
 In
 	•	오픈 접속(닉네임 기반)
 	•	터미널 스타일 화면(클리어+리드로우)
-	•	Boards: list / post list / read / write
-	•	저장소: sqlite
+	•	Menu items: list / navigate to board (post list / read / write)
+	•	저장소: DynamoDB (single-table)
 	•	REST API: 세션 생성 + 입력 이벤트 전송
 
 Out (MVP)
@@ -26,7 +26,7 @@ Architecture
 Browser (xterm.js)
   → REST API (/api/sessions, /api/sessions/:id/events)
     → App Server (Session state machine + rendering)
-      → sqlite
+    → DynamoDB
 
 Components
 
@@ -44,8 +44,8 @@ Terminal Size Policy (MVP)
 	•	세션 생성 시 rows/cols를 고정하고 이후 resize는 무시
 
 UX
-	•	번호 기반 메인 메뉴
-	•	Post list: N / P / R <id> / W / 0
+	•	번호 기반 메뉴(메뉴 아이템)
+	•	Post list: N / P / R <no> / W / 0 (번호는 현재 페이지 1부터)
 	•	Post view: N / P / 0
 	•	Write flow: title + body, . to finish
 
@@ -54,23 +54,9 @@ API (MVP)
 	•	POST /api/sessions/:id/events { input } → { screen }
 	•	DELETE /api/sessions/:id → { ok }
 
-Data Model (sqlite)
+Data Model (DynamoDB)
 
-boards
-	•	id
-	•	name
-	•	sort_order
-
-posts
-	•	id
-	•	board_id
-	•	title
-	•	body
-	•	author
-	•	created_at
-
-Index:
-	•	(board_id, id DESC)
+단일 테이블 설계(자세한 패턴은 `MIGRATION_PLAN.md` 참고).
 
 Non-Functional
 	•	Target concurrency: 10–50 users

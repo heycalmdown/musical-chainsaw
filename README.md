@@ -3,7 +3,7 @@
 브라우저에서 자유롭게 접속하는 클래식 BBS 스타일 “터미널 화면” MVP.
 
 - 클라이언트: **xterm.js** (터미널 렌더링)
-- 서버: Node.js + sqlite + **세션 상태 머신(Server‑Driven UI)**
+- 서버: Node.js + DynamoDB + **세션 상태 머신(Server‑Driven UI)**
 - 통신: **REST** (`/api/sessions`, `/api/sessions/:id/events`)
 
 ## 요구사항
@@ -36,13 +36,15 @@ npm run dev:web
 
 ## 커맨드
 
-- 메인 메뉴: 보드 번호 선택, `0` 종료
-- 글 목록: `N` 다음, `P` 이전, `R <id>` 읽기, `W` 쓰기, `0` 뒤로
+- 메인 메뉴: 메뉴 아이템 번호 선택, `0` 종료
+- 글 목록: `N` 다음, `P` 이전, `R <no>` 읽기(현재 페이지 1부터), `W` 쓰기, `0` 뒤로
 - 글 보기: `N` 다음 페이지, `P` 이전 페이지, `0` 뒤로
 - 글 쓰기: 제목 → 본문 입력, `.` 단독 입력 시 완료
 
 ## 설정(환경변수)
 
 - `BBS_PORT` (기본 `8787`)
-- `BBS_DB_PATH` (기본 `./var/bbs.sqlite3`)
+- `BBS_DDB_TABLE` (기본 `bbs`, DynamoDB 전용)
+- `BBS_DDB_REGION` (기본 `ap-northeast-2`, DynamoDB 전용)
+- `BBS_DDB_ENDPOINT` (옵션, 로컬 DynamoDB용)
 - `BBS_SESSION_TTL_MS` (기본 30분)
