@@ -7,6 +7,7 @@ import type {
 } from "../domain";
 import type { ScreenModel } from "../protocol";
 import type { BbsDb } from "../db";
+import type { SerializedSessionState } from "../session-store";
 
 type TerminalContext = {
   user: string;
@@ -320,6 +321,24 @@ export class BbsUiSession {
   private rootConferenceId: string | null = null;
 
   constructor(private readonly db: BbsDb) {}
+
+  serialize(): SerializedSessionState {
+    return {
+      ctx: { ...this.ctx },
+      mode: this.mode,
+      toast: this.toast,
+      rootConferenceId: this.rootConferenceId,
+    };
+  }
+
+  static deserialize(db: BbsDb, state: SerializedSessionState): BbsUiSession {
+    const session = new BbsUiSession(db);
+    session.ctx = { ...state.ctx } as TerminalContext;
+    session.mode = state.mode as Mode;
+    session.toast = state.toast;
+    session.rootConferenceId = state.rootConferenceId;
+    return session;
+  }
 
   async handleHello(payload: {
     user: string;

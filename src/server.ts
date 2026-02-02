@@ -7,6 +7,7 @@ import {
 } from "./config";
 import { createBbsDb } from "./db";
 import { BbsUiSession } from "./ui/session";
+import { ConflictError, DynamoSessionStore } from "./session-store";
 import type {
   ApiErrorResponse,
   CreateSessionRequest,
@@ -17,16 +18,6 @@ import type {
 } from "./protocol";
 
 type TerminalSize = { rows: number; cols: number };
-
-type SessionEntry = {
-  id: string;
-  nickname: string;
-  term: TerminalSize;
-  session: BbsUiSession;
-  createdAtMs: number;
-  lastActiveAtMs: number;
-  lock: Promise<void>;
-};
 
 function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
@@ -105,27 +96,6 @@ async function readJsonBody(
   return JSON.parse(text) as unknown;
 }
 
-async function withLock<T>(
-  entry: SessionEntry,
-  fn: () => T | Promise<T>,
-): Promise<T> {
-  const prev = entry.lock;
-  let release: () => void;
-  const next = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  entry.lock = prev.then(
-    () => next,
-    () => next,
-  );
-  await prev;
-  try {
-    return await fn();
-  } finally {
-    release!();
-  }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -169,6 +139,8 @@ function shouldExit(screen: ScreenModel): boolean {
   );
 }
 
+const MAX_RETRIES = 3;
+
 async function main(): Promise<void> {
   const portRaw = Number(process.env.BBS_PORT ?? DEFAULT_PORT);
   const port = Number.isFinite(portRaw) ? portRaw : DEFAULT_PORT;
@@ -179,19 +151,14 @@ async function main(): Promise<void> {
   const sessionTtlMs = Number.isFinite(sessionTtlMsRaw)
     ? sessionTtlMsRaw
     : DEFAULT_SESSION_TTL_MS;
+
   const dbConfig = resolveDbConfigFromEnv();
   const db = await createBbsDb(dbConfig);
-  const sessions = new Map<string, SessionEntry>();
 
-  const pruneSessions = () => {
-    const now = Date.now();
-    for (const [id, entry] of sessions.entries()) {
-      if (now - entry.lastActiveAtMs > sessionTtlMs) sessions.delete(id);
-    }
-  };
-
-  const pruneTimer = setInterval(pruneSessions, 30_000);
-  pruneTimer.unref();
+  const sessionStore = new DynamoSessionStore(
+    db.getDocumentClient(),
+    db.getTableName(),
+  );
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -230,15 +197,12 @@ async function main(): Promise<void> {
           cols: term.cols,
         });
 
-        const now = Date.now();
-        sessions.set(sessionId, {
-          id: sessionId,
+        await sessionStore.create({
+          sessionId,
           nickname: nickParsed.nickname,
           term,
-          session: uiSession,
-          createdAtMs: now,
-          lastActiveAtMs: now,
-          lock: Promise.resolve(),
+          state: uiSession.serialize(),
+          ttlMs: sessionTtlMs,
         });
 
         const response: CreateSessionResponse = { sessionId, screen };
@@ -249,11 +213,6 @@ async function main(): Promise<void> {
       const eventMatch = /^\/api\/sessions\/([^/]+)\/events$/.exec(pathname);
       if (method === "POST" && eventMatch) {
         const sessionId = eventMatch[1]!;
-        const entry = sessions.get(sessionId);
-        if (!entry) {
-          sendError(res, 404, "NOT_FOUND", "Session not found");
-          return;
-        }
 
         const bodyRaw = await readJsonBody(req, 128 * 1024);
         const parsed = parseSessionEventRequest(bodyRaw);
@@ -262,15 +221,40 @@ async function main(): Promise<void> {
           return;
         }
 
-        const screen = await withLock(entry, () => {
-          entry.lastActiveAtMs = Date.now();
-          return entry.session.handleEvent(parsed.req.input);
-        });
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          const sessionData = await sessionStore.get(sessionId);
+          if (!sessionData) {
+            sendError(res, 404, "NOT_FOUND", "Session not found");
+            return;
+          }
 
-        if (shouldExit(screen)) sessions.delete(sessionId);
+          const uiSession = BbsUiSession.deserialize(db, sessionData.state);
+          const screen = await uiSession.handleEvent(parsed.req.input);
 
-        const response: SessionEventResponse = { screen };
-        sendJson(res, 200, response);
+          try {
+            if (shouldExit(screen)) {
+              await sessionStore.delete(sessionId);
+            } else {
+              await sessionStore.update({
+                sessionId,
+                state: uiSession.serialize(),
+                expectedVersion: sessionData.version,
+                ttlMs: sessionTtlMs,
+              });
+            }
+
+            const response: SessionEventResponse = { screen };
+            sendJson(res, 200, response);
+            return;
+          } catch (error) {
+            if (error instanceof ConflictError && attempt < MAX_RETRIES - 1) {
+              continue;
+            }
+            throw error;
+          }
+        }
+
+        sendError(res, 409, "CONFLICT", "Session update conflict");
         return;
       }
 
@@ -278,7 +262,7 @@ async function main(): Promise<void> {
       if (sessionMatch) {
         const sessionId = sessionMatch[1]!;
         if (method === "DELETE") {
-          const existed = sessions.delete(sessionId);
+          const existed = await sessionStore.delete(sessionId);
           sendJson(res, 200, { ok: true, deleted: existed });
           return;
         }
@@ -303,11 +287,11 @@ async function main(): Promise<void> {
   server.listen(port, () => {
     console.log(`[server] http://localhost:${port}`);
     console.log(`[server] db: dynamodb:${dbConfig.dynamodb.tableName}`);
+    console.log(`[server] session store: dynamodb`);
   });
 
   const shutdown = () => {
     server.close(() => {
-      clearInterval(pruneTimer);
       void db.close();
     });
   };

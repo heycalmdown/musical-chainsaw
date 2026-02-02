@@ -116,6 +116,9 @@ export interface BbsDb {
   }): Promise<string>;
 
   close(): Promise<void>;
+
+  getDocumentClient(): DynamoDBDocumentClient;
+  getTableName(): string;
 }
 
 export async function createBbsDb(config: DbConfig): Promise<BbsDb> {
@@ -1153,5 +1156,13 @@ class DynamoBbsDb implements BbsDb {
 
   async close(): Promise<void> {
     this.rawClient.destroy();
+  }
+
+  getDocumentClient(): DynamoDBDocumentClient {
+    return this.client;
+  }
+
+  getTableName(): string {
+    return this.tableName;
   }
 }
