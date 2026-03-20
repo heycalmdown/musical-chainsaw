@@ -6,10 +6,6 @@ export default defineConfig({
     fs: {
       allow: [".."],
     },
-    proxy: {
-      "/api": "http://localhost:8787",
-      "/health": "http://localhost:8787",
-    },
   },
   build: {
     outDir: "../dist",

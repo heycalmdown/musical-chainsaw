@@ -1,2 +1,1 @@
-export const tableName = "Bbs";
-export const SERVICE = "bbs";
+export const SERVICE = "chol";

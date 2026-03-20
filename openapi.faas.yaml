@@ -1,0 +1,174 @@
+openapi: 3.0.0
+info:
+  title: faas-chol
+  version: 0.0.0
+tags: []
+paths:
+  /chol/health:
+    get:
+      operationId: Health
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /chol/sessions:
+    post:
+      operationId: CreateSession
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSessionResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+  /chol/sessions/{sessionId}:
+    delete:
+      operationId: DeleteSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteSessionResponse'
+  /chol/sessions/{sessionId}/events:
+    post:
+      operationId: SessionEvent
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionEventResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionEventRequest'
+components:
+  schemas:
+    CreateSessionRequest:
+      type: object
+      required:
+        - nickname
+      properties:
+        nickname:
+          type: string
+        rows:
+          type: integer
+          format: int32
+        cols:
+          type: integer
+          format: int32
+    CreateSessionResponse:
+      type: object
+      required:
+        - sessionId
+        - screen
+      properties:
+        sessionId:
+          type: string
+        screen:
+          $ref: '#/components/schemas/ScreenModel'
+    DeleteSessionResponse:
+      type: object
+      required:
+        - ok
+        - deleted
+      properties:
+        ok:
+          type: boolean
+        deleted:
+          type: boolean
+    HealthResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          enum:
+            - true
+    ScreenAction:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - exit
+    ScreenModel:
+      type: object
+      required:
+        - title
+        - lines
+        - prompt
+        - inputMode
+      properties:
+        title:
+          type: string
+        lines:
+          type: array
+          items:
+            type: string
+        prompt:
+          type: string
+        inputMode:
+          type: string
+          enum:
+            - line
+            - multiline
+        hints:
+          type: array
+          items:
+            type: string
+        toast:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScreenAction'
+    SessionEventRequest:
+      type: object
+      required:
+        - input
+      properties:
+        input:
+          type: string
+    SessionEventResponse:
+      type: object
+      required:
+        - screen
+      properties:
+        screen:
+          $ref: '#/components/schemas/ScreenModel'
+servers:
+  - url: https://api.kson.live
+    description: Public Gateway
+    variables: {}

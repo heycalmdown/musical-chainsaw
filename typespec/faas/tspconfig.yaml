@@ -1,0 +1,11 @@
+emit:
+  - "@typespec/openapi3"
+  - "faas-spec"
+
+options:
+  "@typespec/openapi3":
+    emitter-output-dir: "{project-root}/../../"
+    output-file: "openapi.faas.yaml"
+
+  "faas-spec":
+    emitter-output-dir: "{project-root}/../../manifest/lib"

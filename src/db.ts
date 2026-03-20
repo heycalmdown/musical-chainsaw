@@ -1,14 +1,4 @@
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import {
-  BatchWriteCommand,
-  DeleteCommand,
-  DynamoDBDocumentClient,
-  GetCommand,
-  PutCommand,
-  QueryCommand,
-  UpdateCommand,
-} from "@aws-sdk/lib-dynamodb";
-import { monotonicFactory } from "ulid";
+import crypto from "node:crypto";
 import type {
   Board,
   Conference,
@@ -17,6 +7,14 @@ import type {
   PostSummary,
 } from "./domain";
 import type { DbConfig } from "./config";
+import {
+  createDsqlPool,
+  ensureDsqlSchema,
+  qualifyName,
+  type DsqlClient,
+  type DsqlPool,
+  withDsqlTransaction,
+} from "./dsql";
 
 export type PostsPage = { posts: PostSummary[]; nextCursor: string | null };
 
@@ -117,32 +115,96 @@ export interface BbsDb {
 
   close(): Promise<void>;
 
-  getDocumentClient(): DynamoDBDocumentClient;
-  getTableName(): string;
+  getPool(): DsqlPool;
+  getSchemaName(): string;
 }
 
-export async function createBbsDb(config: DbConfig): Promise<BbsDb> {
-  const db = new DynamoBbsDb(config.dynamodb);
-  await db.init();
-  return db;
+type TimestampValue = string | Date;
+
+type ConferenceRow = {
+  conference_id: string;
+  slug: string | null;
+  name: string;
+  is_root: boolean;
+  welcome_title: string;
+  welcome_body: string;
+  menu_title: string;
+  menu_body: string;
+  updated_at: TimestampValue;
+  updated_by: string;
+};
+
+type MenuItemRow = {
+  menu_item_id: string;
+  conference_id: string;
+  label: string;
+  display_no: string;
+  display_type: string;
+  action_type: ConferenceMenuItem["actionType"];
+  action_ref: string;
+  body: string;
+  hidden: boolean;
+  updated_at: TimestampValue;
+  updated_by: string;
+};
+
+type BoardRow = {
+  board_id: string;
+  conference_id: string;
+  name: string;
+};
+
+type PostRow = {
+  post_id: string;
+  conference_id: string;
+  board_id: string;
+  title: string;
+  body: string;
+  author: string;
+  created_at: TimestampValue;
+};
+
+type PostCursor = {
+  createdAt: string;
+  postId: string;
+};
+
+const ROOT_CONFERENCE_ID = "0";
+const DEFAULT_CONFERENCE_ID = "main";
+const DEFAULT_BOARD_ID = "general";
+const DEFAULT_ROOT_MENU_ITEM_ID = "root-main";
+const DEFAULT_MAIN_MENU_ITEM_ID = "main-general";
+
+export async function createBbsDb(
+  config: DbConfig,
+  pool?: DsqlPool,
+): Promise<BbsDb> {
+  return new DsqlBbsDb(config.dsql, pool);
+}
+
+export async function ensureBbsSeedData(
+  pool: DsqlPool,
+  schemaName: string,
+): Promise<void> {
+  await seedDefaults(pool, schemaName);
+}
+
+export async function setupBbsDb(config: DbConfig): Promise<void> {
+  const pool = createDsqlPool(config.dsql);
+  try {
+    await ensureDsqlSchema(pool, config.dsql.schema);
+    await ensureBbsSeedData(pool, config.dsql.schema);
+  } finally {
+    await pool.end();
+  }
 }
 
 function nowIso(): string {
   return new Date().toISOString();
 }
 
-const ID_PAD_WIDTH = 12;
-
-function padId(value: string | number): string {
-  const num = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(num) || num < 0) return String(value);
-  return String(Math.trunc(num)).padStart(ID_PAD_WIDTH, "0");
-}
-
-const createUlid = monotonicFactory();
-
-function generateUlid(): string {
-  return createUlid();
+function generateId(): string {
+  return crypto.randomUUID();
 }
 
 function encodeCursor(payload: Record<string, unknown>): string {
@@ -156,509 +218,334 @@ function decodeCursor(
   try {
     const text = Buffer.from(cursor, "base64").toString("utf8");
     const data = JSON.parse(text);
-    if (data && typeof data === "object")
+    if (data && typeof data === "object") {
       return data as Record<string, unknown>;
+    }
   } catch {
     return null;
   }
   return null;
 }
 
-const GS1_NAME = "GS1";
-const CONFERENCE_PARTITION = "CONF";
-
-function conferenceItemPk(): string {
-  return CONFERENCE_PARTITION;
-}
-
-function conferenceItemSk(id: string): string {
-  return `CONF#${id}`;
-}
-
-function conferenceMenuPk(id: string): string {
-  return `CONF#${id}`;
-}
-
-function boardPk(_: string, boardId: string): string {
-  return `BOARD#${boardId}`;
-}
-
-function menuSk(menuItemId: string): string {
-  return `MENU#${padId(menuItemId)}`;
-}
-
-function postSk(postId: string): string {
-  return `POST#${postId}`;
-}
-
-function boardGsPk(conferenceId: string): string {
-  return `CONF#${conferenceId}`;
-}
-
-function boardGsSk(boardId: string): string {
-  return `BOARD#${padId(boardId)}`;
-}
-
-function postGsPk(postId: string): string {
-  return `POST#${postId}`;
-}
-
-type DdbConferenceItem = {
-  PK: string;
-  SK: string;
-  entityType: "CONFERENCE";
-  id: string;
-  slug?: string | null;
-  name: string;
-  is_root: number;
-  welcome_title: string;
-  welcome_body: string;
-  menu_title: string;
-  menu_body: string;
-  updated_at: string;
-  updated_by: string;
-};
-
-type DdbMenuItemRecord = {
-  PK: string;
-  SK: string;
-  entityType: "MENU_ITEM";
-  conference_id: string;
-  menu_item_id: string;
-  label: string;
-  display_no: string;
-  display_type: string;
-  action_type: ConferenceMenuItem["actionType"];
-  action_ref: string;
-  body: string;
-  hidden: number;
-  enabled?: number;
-  updated_at: string;
-  updated_by: string;
-};
-
-type DdbBoardItem = {
-  PK: string;
-  SK: string;
-  GS1PK?: string;
-  GS1SK?: string;
-  entityType: "BOARD";
-  id: string;
-  name: string;
-  conference_id: string;
-};
-
-type DdbPostItem = {
-  PK: string;
-  SK: string;
-  GS1PK?: string;
-  GS1SK?: string;
-  entityType: "POST";
-  post_id: string;
-  board_id: string;
-  conference_id: string;
-  title: string;
-  body: string;
-  author: string;
-  created_at: string;
-};
-
-type DdbWriteRequest = {
-  DeleteRequest?: {
-    Key: Record<string, unknown>;
-  };
-  PutRequest?: {
-    Item: Record<string, unknown>;
-  };
-};
-
-function mapConferenceItem(item: DdbConferenceItem): Conference {
-  return {
-    id: item.id,
-    slug: item.slug ?? null,
-    name: item.name,
-    isRoot: item.is_root === 1,
-    welcomeTitle: item.welcome_title ?? "",
-    welcomeBody: item.welcome_body ?? "",
-    menuTitle: item.menu_title ?? "",
-    menuBody: item.menu_body ?? "",
-    updatedAt: item.updated_at ?? "",
-    updatedBy: item.updated_by ?? "",
-  };
-}
-
-function mapMenuItem(item: DdbMenuItemRecord): ConferenceMenuItem {
-  return {
-    id: item.menu_item_id,
-    conferenceId: item.conference_id,
-    label: item.label,
-    displayNo: item.display_no,
-    displayType: item.display_type,
-    actionType: item.action_type,
-    actionRef: item.action_ref,
-    body: item.body,
-    hidden: Boolean(item.hidden),
-    updatedAt: item.updated_at ?? "",
-    updatedBy: item.updated_by ?? "",
-  };
-}
-
-function mapBoardItem(item: DdbBoardItem): Board {
-  return {
-    id: item.id,
-    name: item.name,
-    conferenceId: item.conference_id,
-  };
-}
-
-function mapPostSummaryItem(item: DdbPostItem): PostSummary {
-  return {
-    id: item.post_id,
-    title: item.title,
-    author: item.author,
-    createdAt: item.created_at,
-  };
-}
-
-function mapPostItem(item: DdbPostItem): Post {
-  return {
-    id: item.post_id,
-    conferenceId: item.conference_id,
-    boardId: item.board_id,
-    title: item.title,
-    body: item.body,
-    author: item.author,
-    createdAt: item.created_at,
-  };
-}
-
-class DynamoBbsDb implements BbsDb {
-  private readonly client: DynamoDBDocumentClient;
-  private readonly rawClient: DynamoDBClient;
-  private readonly tableName: string;
-
-  constructor(options: {
-    tableName: string;
-    region: string;
-    endpoint?: string;
-  }) {
-    console.log("options", options);
-    this.rawClient = new DynamoDBClient({
-      region: options.region,
-      endpoint: options.endpoint,
-    });
-    this.client = DynamoDBDocumentClient.from(this.rawClient, {
-      marshallOptions: { removeUndefinedValues: true },
-    });
-    this.tableName = options.tableName;
-  }
-
-  async init(): Promise<void> {
-    await this.seedDefaults();
-  }
-
-  private async seedDefaults(): Promise<void> {
-    const now = nowIso();
-
-    const root = await this.getRootConference();
-    let rootId = root?.id;
-    if (!rootId) {
-      rootId = "0";
-      await this.putConferenceItem({
-        id: rootId,
-        slug: "root",
-        name: "Lobby",
-        isRoot: true,
-        welcomeTitle: "Welcome",
-        welcomeBody: "",
-        menuTitle: "Menu",
-        menuBody: "",
-        updatedAt: now,
-        updatedBy: "system",
-      });
-    }
-
-    const defaultConference = await this.getDefaultConference();
-    let conferenceId = defaultConference?.id;
-    if (!conferenceId) {
-      conferenceId = await this.nextConferenceId();
-      await this.putConferenceItem({
-        id: conferenceId,
-        slug: "main",
-        name: "Main",
-        isRoot: false,
-        welcomeTitle: "Welcome",
-        welcomeBody: "",
-        menuTitle: "Menu",
-        menuBody: "",
-        updatedAt: now,
-        updatedBy: "system",
-      });
-    }
-
-    const boards = await this.listBoards(conferenceId);
-    if (boards.length === 0) {
-      await this.createBoard({ conferenceId, name: "General" });
-    }
-
-    const menuItems = await this.listMenuItems(conferenceId);
-    if (menuItems.length === 0) {
-      const updatedBoards = await this.listBoards(conferenceId);
-      for (const board of updatedBoards) {
-        await this.createMenuItem({
-          conferenceId,
-          label: board.name,
-          displayNo: "",
-          displayType: "",
-          actionType: "board",
-          actionRef: board.id,
-          body: "",
-          hidden: false,
-          updatedBy: "system",
-        });
-      }
-    }
-
-    if (rootId) {
-      const rootMenuItems = await this.listMenuItems(rootId);
-      if (rootMenuItems.length === 0) {
-        const conferences = await this.listConferences();
-        if (conferences.length > 0) {
-          const first = conferences[0]!;
-          await this.createMenuItem({
-            conferenceId: rootId,
-            label: first.name,
-            displayNo: "",
-            displayType: "",
-            actionType: "conference",
-            actionRef: first.id,
-            body: "",
-            hidden: false,
-            updatedBy: "system",
-          });
-        }
-      }
-    }
-  }
-
-  private async putConferenceItem(args: {
-    id: string;
-    slug: string | null;
-    name: string;
-    isRoot: boolean;
-    welcomeTitle: string;
-    welcomeBody: string;
-    menuTitle: string;
-    menuBody: string;
-    updatedAt: string;
-    updatedBy: string;
-  }): Promise<void> {
-    const item: DdbConferenceItem = {
-      PK: conferenceItemPk(),
-      SK: conferenceItemSk(args.id),
-      entityType: "CONFERENCE",
-      id: args.id,
-      slug: args.slug,
-      name: args.name,
-      is_root: args.isRoot ? 1 : 0,
-      welcome_title: args.welcomeTitle,
-      welcome_body: args.welcomeBody,
-      menu_title: args.menuTitle,
-      menu_body: args.menuBody,
-      updated_at: args.updatedAt,
-      updated_by: args.updatedBy,
+function parsePostCursor(cursor: string | null | undefined): PostCursor | null {
+  const decoded = decodeCursor(cursor);
+  if (!decoded) return null;
+  if (
+    typeof decoded.createdAt === "string" &&
+    typeof decoded.postId === "string"
+  ) {
+    return {
+      createdAt: decoded.createdAt,
+      postId: decoded.postId,
     };
-    try {
-      await this.client.send(
-        new PutCommand({
-          TableName: this.tableName,
-          Item: item,
-          ConditionExpression: "attribute_not_exists(PK)",
-        }),
-      );
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        "name" in error &&
-        error.name === "ConditionalCheckFailedException"
+  }
+  return null;
+}
+
+function toIso(value: TimestampValue): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function mapConferenceRow(row: ConferenceRow): Conference {
+  return {
+    id: row.conference_id,
+    slug: row.slug,
+    name: row.name,
+    isRoot: row.is_root,
+    welcomeTitle: row.welcome_title,
+    welcomeBody: row.welcome_body,
+    menuTitle: row.menu_title,
+    menuBody: row.menu_body,
+    updatedAt: toIso(row.updated_at),
+    updatedBy: row.updated_by,
+  };
+}
+
+function mapMenuItemRow(row: MenuItemRow): ConferenceMenuItem {
+  return {
+    id: row.menu_item_id,
+    conferenceId: row.conference_id,
+    label: row.label,
+    displayNo: row.display_no,
+    displayType: row.display_type,
+    actionType: row.action_type,
+    actionRef: row.action_ref,
+    body: row.body,
+    hidden: row.hidden,
+    updatedAt: toIso(row.updated_at),
+    updatedBy: row.updated_by,
+  };
+}
+
+function mapBoardRow(row: BoardRow): Board {
+  return {
+    id: row.board_id,
+    conferenceId: row.conference_id,
+    name: row.name,
+  };
+}
+
+function mapPostSummaryRow(row: PostRow): PostSummary {
+  return {
+    id: row.post_id,
+    title: row.title,
+    author: row.author,
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function mapPostRow(row: PostRow): Post {
+  return {
+    id: row.post_id,
+    conferenceId: row.conference_id,
+    boardId: row.board_id,
+    title: row.title,
+    body: row.body,
+    author: row.author,
+    createdAt: toIso(row.created_at),
+  };
+}
+
+async function seedDefaults(pool: DsqlPool, schemaName: string): Promise<void> {
+  const table = (name: string): string => qualifyName(schemaName, name);
+  const now = nowIso();
+
+  await pool.query(
+    `
+      INSERT INTO ${table("conferences")} (
+        conference_id,
+        slug,
+        name,
+        is_root,
+        welcome_title,
+        welcome_body,
+        menu_title,
+        menu_body,
+        created_at,
+        updated_at,
+        updated_by
       )
-        return;
-      throw error;
-    }
-  }
+      VALUES ($1, $2, $3, TRUE, $4, $5, $6, $7, $8, $8, $9)
+      ON CONFLICT (conference_id) DO NOTHING
+    `,
+    [
+      ROOT_CONFERENCE_ID,
+      "root",
+      "Lobby",
+      "Welcome",
+      "",
+      "Menu",
+      "",
+      now,
+      "system",
+    ],
+  );
 
-  private async getDefaultConference(): Promise<Conference | null> {
-    const conferences = await this.listConferences();
-    return conferences.length > 0 ? conferences[0]! : null;
-  }
+  await pool.query(
+    `
+      INSERT INTO ${table("conferences")} (
+        conference_id,
+        slug,
+        name,
+        is_root,
+        welcome_title,
+        welcome_body,
+        menu_title,
+        menu_body,
+        created_at,
+        updated_at,
+        updated_by
+      )
+      VALUES ($1, $2, $3, FALSE, $4, $5, $6, $7, $8, $8, $9)
+      ON CONFLICT (conference_id) DO NOTHING
+    `,
+    [
+      DEFAULT_CONFERENCE_ID,
+      "main",
+      "Main",
+      "Welcome",
+      "",
+      "Menu",
+      "",
+      now,
+      "system",
+    ],
+  );
 
-  private async queryAllItems<T>(params: {
-    TableName: string;
-    IndexName?: string;
-    KeyConditionExpression: string;
-    ExpressionAttributeValues: Record<string, unknown>;
-    ExpressionAttributeNames?: Record<string, string>;
-    FilterExpression?: string;
-    ScanIndexForward?: boolean;
-  }): Promise<T[]> {
-    const items: T[] = [];
-    let lastKey: Record<string, unknown> | undefined;
-    do {
-      const result = await this.client.send(
-        new QueryCommand({
-          ...params,
-          ExclusiveStartKey: lastKey,
-        }),
-      );
-      const pageItems = (result.Items ?? []) as T[];
-      items.push(...pageItems);
-      lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
-    } while (lastKey);
-    return items;
-  }
+  const boardExists = await pool.query<{ board_id: string }>(
+    `
+      SELECT board_id
+      FROM ${table("boards")}
+      WHERE conference_id = $1
+      LIMIT 1
+    `,
+    [DEFAULT_CONFERENCE_ID],
+  );
 
-  private async batchDelete(
-    keys: Array<{ PK: string; SK: string }>,
-  ): Promise<void> {
-    const batches: Array<Array<{ PK: string; SK: string }>> = [];
-    for (let i = 0; i < keys.length; i += 25) {
-      batches.push(keys.slice(i, i + 25));
-    }
-
-    for (const batch of batches) {
-      let unprocessed: DdbWriteRequest[] = batch.map((key) => ({
-        DeleteRequest: { Key: key },
-      }));
-      let attempts = 0;
-      while (unprocessed.length > 0 && attempts < 5) {
-        const result = await this.client.send(
-          new BatchWriteCommand({
-            RequestItems: {
-              [this.tableName]: unprocessed,
-            },
-          }),
-        );
-        unprocessed =
-          (result.UnprocessedItems?.[this.tableName] as DdbWriteRequest[]) ??
-          [];
-        attempts += 1;
-      }
-    }
-  }
-
-  private async listMenuItemRecords(
-    conferenceId: string,
-  ): Promise<DdbMenuItemRecord[]> {
-    return this.queryAllItems<DdbMenuItemRecord>({
-      TableName: this.tableName,
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-      ExpressionAttributeValues: {
-        ":pk": conferenceMenuPk(conferenceId),
-        ":prefix": "MENU#",
-      },
-      ScanIndexForward: true,
-    });
-  }
-
-  private async nextConferenceId(): Promise<string> {
-    const items = await this.queryAllItems<DdbConferenceItem>({
-      TableName: this.tableName,
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-      ExpressionAttributeValues: {
-        ":pk": conferenceItemPk(),
-        ":prefix": "CONF#",
-      },
-      ScanIndexForward: true,
-    });
-    let max = 0;
-    for (const item of items) {
-      if (item.id === "0") continue;
-      const num = Number(item.id);
-      if (Number.isFinite(num) && num > max) max = Math.trunc(num);
-    }
-    return String(max + 1);
-  }
-
-  private async nextMenuItemId(conferenceId: string): Promise<string> {
-    const latest = await this.client.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-        ExpressionAttributeValues: {
-          ":pk": conferenceMenuPk(conferenceId),
-          ":prefix": "MENU#",
-        },
-        ScanIndexForward: false,
-        Limit: 1,
-      }),
+  if ((boardExists.rowCount ?? 0) === 0) {
+    await pool.query(
+      `
+        INSERT INTO ${table("boards")} (
+          board_id,
+          conference_id,
+          name,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (board_id) DO NOTHING
+      `,
+      [DEFAULT_BOARD_ID, DEFAULT_CONFERENCE_ID, "General", now],
     );
-    const max = Number(
-      (latest.Items?.[0] as DdbMenuItemRecord | undefined)?.menu_item_id,
-    );
-    const next = Number.isFinite(max) && max > 0 ? Math.trunc(max) + 1 : 1;
-    return String(next);
   }
 
-  private async fetchMenuItemRecord(
-    conferenceId: string,
-    menuItemId: string,
-  ): Promise<DdbMenuItemRecord | null> {
-    const result = await this.client.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-        FilterExpression: "menu_item_id = :menuId",
-        ExpressionAttributeValues: {
-          ":pk": conferenceMenuPk(conferenceId),
-          ":prefix": "MENU#",
-          ":menuId": menuItemId,
-        },
-        Limit: 1,
-      }),
+  const mainMenuExists = await pool.query<{ menu_item_id: string }>(
+    `
+      SELECT menu_item_id
+      FROM ${table("menu_items")}
+      WHERE conference_id = $1
+      LIMIT 1
+    `,
+    [DEFAULT_CONFERENCE_ID],
+  );
+
+  if ((mainMenuExists.rowCount ?? 0) === 0) {
+    await pool.query(
+      `
+        INSERT INTO ${table("menu_items")} (
+          menu_item_id,
+          conference_id,
+          label,
+          display_no,
+          display_type,
+          action_type,
+          action_ref,
+          body,
+          hidden,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        VALUES ($1, $2, $3, '', '', 'board', $4, '', FALSE, $5, $5, $6)
+        ON CONFLICT (menu_item_id) DO NOTHING
+      `,
+      [
+        DEFAULT_MAIN_MENU_ITEM_ID,
+        DEFAULT_CONFERENCE_ID,
+        "General",
+        DEFAULT_BOARD_ID,
+        now,
+        "system",
+      ],
     );
-    const item = (result.Items?.[0] as DdbMenuItemRecord | undefined) ?? null;
-    return item;
+  }
+
+  const rootMenuExists = await pool.query<{ menu_item_id: string }>(
+    `
+      SELECT menu_item_id
+      FROM ${table("menu_items")}
+      WHERE conference_id = $1
+      LIMIT 1
+    `,
+    [ROOT_CONFERENCE_ID],
+  );
+
+  if ((rootMenuExists.rowCount ?? 0) === 0) {
+    await pool.query(
+      `
+        INSERT INTO ${table("menu_items")} (
+          menu_item_id,
+          conference_id,
+          label,
+          display_no,
+          display_type,
+          action_type,
+          action_ref,
+          body,
+          hidden,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        VALUES ($1, $2, $3, '', '', 'conference', $4, '', FALSE, $5, $5, $6)
+        ON CONFLICT (menu_item_id) DO NOTHING
+      `,
+      [
+        DEFAULT_ROOT_MENU_ITEM_ID,
+        ROOT_CONFERENCE_ID,
+        "Main",
+        DEFAULT_CONFERENCE_ID,
+        now,
+        "system",
+      ],
+    );
+  }
+}
+
+class DsqlBbsDb implements BbsDb {
+  private readonly pool: DsqlPool;
+  private readonly schemaName: string;
+
+  constructor(config: DbConfig["dsql"], pool?: DsqlPool) {
+    this.pool = pool ?? createDsqlPool(config);
+    this.schemaName = config.schema;
+  }
+
+  private table(name: string): string {
+    return qualifyName(this.schemaName, name);
+  }
+
+  async seedDefaults(): Promise<void> {
+    await seedDefaults(this.pool, this.schemaName);
   }
 
   async listConferences(): Promise<Conference[]> {
-    const items = await this.queryAllItems<DdbConferenceItem>({
-      TableName: this.tableName,
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-      FilterExpression: "is_root = :zero",
-      ExpressionAttributeValues: {
-        ":pk": conferenceItemPk(),
-        ":prefix": "CONF#",
-        ":zero": 0,
-      },
-      ScanIndexForward: true,
-    });
-    return items.map(mapConferenceItem);
+    const result = await this.pool.query<ConferenceRow>(
+      `
+        SELECT
+          conference_id,
+          slug,
+          name,
+          is_root,
+          welcome_title,
+          welcome_body,
+          menu_title,
+          menu_body,
+          updated_at,
+          updated_by
+        FROM ${this.table("conferences")}
+        WHERE is_root = FALSE
+        ORDER BY created_at ASC, conference_id ASC
+      `,
+    );
+    return result.rows.map(mapConferenceRow);
   }
 
   async getConference(conferenceId: string): Promise<Conference | null> {
-    const result = await this.client.send(
-      new GetCommand({
-        TableName: this.tableName,
-        Key: {
-          PK: conferenceItemPk(),
-          SK: conferenceItemSk(conferenceId),
-        },
-      }),
+    const result = await this.pool.query<ConferenceRow>(
+      `
+        SELECT
+          conference_id,
+          slug,
+          name,
+          is_root,
+          welcome_title,
+          welcome_body,
+          menu_title,
+          menu_body,
+          updated_at,
+          updated_by
+        FROM ${this.table("conferences")}
+        WHERE conference_id = $1
+        LIMIT 1
+      `,
+      [conferenceId],
     );
-    const item = result.Item as DdbConferenceItem | undefined;
-    return item ? mapConferenceItem(item) : null;
+    const row = result.rows[0];
+    return row ? mapConferenceRow(row) : null;
   }
 
   async getRootConference(): Promise<Conference | null> {
-    console.log("table", this.tableName);
-    const result = await this.client.send(
-      new GetCommand({
-        TableName: this.tableName,
-        Key: { PK: conferenceItemPk(), SK: conferenceItemSk("0") },
-      }),
-    );
-    const item = result.Item as DdbConferenceItem | undefined;
-    return item ? mapConferenceItem(item) : null;
+    return this.getConference(ROOT_CONFERENCE_ID);
   }
 
   async updateConferenceWelcome(args: {
@@ -667,23 +554,17 @@ class DynamoBbsDb implements BbsDb {
     body: string;
     updatedBy: string;
   }): Promise<void> {
-    const updatedAt = nowIso();
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: {
-          PK: conferenceItemPk(),
-          SK: conferenceItemSk(args.conferenceId),
-        },
-        UpdateExpression:
-          "SET welcome_title = :title, welcome_body = :body, updated_at = :updatedAt, updated_by = :updatedBy",
-        ExpressionAttributeValues: {
-          ":title": args.title,
-          ":body": args.body,
-          ":updatedAt": updatedAt,
-          ":updatedBy": args.updatedBy,
-        },
-      }),
+    await this.pool.query(
+      `
+        UPDATE ${this.table("conferences")}
+        SET
+          welcome_title = $2,
+          welcome_body = $3,
+          updated_at = $4,
+          updated_by = $5
+        WHERE conference_id = $1
+      `,
+      [args.conferenceId, args.title, args.body, nowIso(), args.updatedBy],
     );
   }
 
@@ -693,23 +574,17 @@ class DynamoBbsDb implements BbsDb {
     body: string;
     updatedBy: string;
   }): Promise<void> {
-    const updatedAt = nowIso();
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: {
-          PK: conferenceItemPk(),
-          SK: conferenceItemSk(args.conferenceId),
-        },
-        UpdateExpression:
-          "SET menu_title = :title, menu_body = :body, updated_at = :updatedAt, updated_by = :updatedBy",
-        ExpressionAttributeValues: {
-          ":title": args.title,
-          ":body": args.body,
-          ":updatedAt": updatedAt,
-          ":updatedBy": args.updatedBy,
-        },
-      }),
+    await this.pool.query(
+      `
+        UPDATE ${this.table("conferences")}
+        SET
+          menu_title = $2,
+          menu_body = $3,
+          updated_at = $4,
+          updated_by = $5
+        WHERE conference_id = $1
+      `,
+      [args.conferenceId, args.title, args.body, nowIso(), args.updatedBy],
     );
   }
 
@@ -717,30 +592,29 @@ class DynamoBbsDb implements BbsDb {
     name: string;
     updatedBy: string;
   }): Promise<string> {
-    const id = await this.nextConferenceId();
-    const updatedAt = nowIso();
+    const id = generateId();
+    const now = nowIso();
 
-    await this.client.send(
-      new PutCommand({
-        TableName: this.tableName,
-        Item: {
-          PK: conferenceItemPk(),
-          SK: conferenceItemSk(id),
-          entityType: "CONFERENCE",
-          id,
-          slug: null,
-          name: args.name,
-          is_root: 0,
-          welcome_title: "Welcome",
-          welcome_body: "",
-          menu_title: "Menu",
-          menu_body: "",
-          updated_at: updatedAt,
-          updated_by: args.updatedBy,
-        } as DdbConferenceItem,
-        ConditionExpression: "attribute_not_exists(PK)",
-      }),
+    await this.pool.query(
+      `
+        INSERT INTO ${this.table("conferences")} (
+          conference_id,
+          slug,
+          name,
+          is_root,
+          welcome_title,
+          welcome_body,
+          menu_title,
+          menu_body,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        VALUES ($1, NULL, $2, FALSE, 'Welcome', '', 'Menu', '', $3, $3, $4)
+      `,
+      [id, args.name, now, args.updatedBy],
     );
+
     return id;
   }
 
@@ -749,84 +623,140 @@ class DynamoBbsDb implements BbsDb {
     name: string;
     updatedBy: string;
   }): Promise<boolean> {
-    const updatedAt = nowIso();
-    try {
-      await this.client.send(
-        new UpdateCommand({
-          TableName: this.tableName,
-          Key: {
-            PK: conferenceItemPk(),
-            SK: conferenceItemSk(args.conferenceId),
-          },
-          UpdateExpression:
-            "SET #name = :name, updated_at = :updatedAt, updated_by = :updatedBy",
-          ConditionExpression: "attribute_exists(PK) AND is_root = :zero",
-          ExpressionAttributeNames: { "#name": "name" },
-          ExpressionAttributeValues: {
-            ":name": args.name,
-            ":updatedAt": updatedAt,
-            ":updatedBy": args.updatedBy,
-            ":zero": 0,
-          },
-        }),
-      );
-      return true;
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        "name" in error &&
-        error.name === "ConditionalCheckFailedException"
-      )
-        return false;
-      throw error;
-    }
+    const result = await this.pool.query<{ conference_id: string }>(
+      `
+        UPDATE ${this.table("conferences")}
+        SET
+          name = $2,
+          updated_at = $3,
+          updated_by = $4
+        WHERE conference_id = $1
+          AND is_root = FALSE
+        RETURNING conference_id
+      `,
+      [args.conferenceId, args.name, nowIso(), args.updatedBy],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async deleteConference(args: { conferenceId: string }): Promise<boolean> {
-    const conference = await this.getConference(args.conferenceId);
-    if (!conference || conference.isRoot) return false;
-
-    const menuItems = await this.listMenuItemRecords(args.conferenceId);
-    if (menuItems.length > 0) {
-      await this.batchDelete(
-        menuItems.map((item) => ({ PK: item.PK, SK: item.SK })),
+    return withDsqlTransaction(this.pool, async (client) => {
+      const conference = await client.query<{ is_root: boolean }>(
+        `
+          SELECT is_root
+          FROM ${this.table("conferences")}
+          WHERE conference_id = $1
+          LIMIT 1
+        `,
+        [args.conferenceId],
       );
-    }
 
-    const boards = await this.listBoards(args.conferenceId);
-    for (const board of boards) {
-      await this.deleteBoard({
-        conferenceId: args.conferenceId,
-        boardId: board.id,
-      });
-    }
+      const row = conference.rows[0];
+      if (!row || row.is_root) return false;
 
-    await this.client.send(
-      new DeleteCommand({
-        TableName: this.tableName,
-        Key: {
-          PK: conferenceItemPk(),
-          SK: conferenceItemSk(args.conferenceId),
-        },
-      }),
-    );
-    return true;
+      await client.query(
+        `
+          DELETE FROM ${this.table("menu_items")}
+          WHERE conference_id = $1
+             OR (action_type = 'conference' AND action_ref = $1)
+        `,
+        [args.conferenceId],
+      );
+
+      const boards = await client.query<{ board_id: string }>(
+        `
+          SELECT board_id
+          FROM ${this.table("boards")}
+          WHERE conference_id = $1
+        `,
+        [args.conferenceId],
+      );
+
+      for (const board of boards.rows) {
+        await client.query(
+          `
+            DELETE FROM ${this.table("posts")}
+            WHERE board_id = $1
+              AND conference_id = $2
+          `,
+          [board.board_id, args.conferenceId],
+        );
+      }
+
+      await client.query(
+        `
+          DELETE FROM ${this.table("boards")}
+          WHERE conference_id = $1
+        `,
+        [args.conferenceId],
+      );
+
+      const deleted = await client.query<{ conference_id: string }>(
+        `
+          DELETE FROM ${this.table("conferences")}
+          WHERE conference_id = $1
+          RETURNING conference_id
+        `,
+        [args.conferenceId],
+      );
+
+      return (deleted.rowCount ?? 0) > 0;
+    });
   }
 
   async listMenuItems(conferenceId: string): Promise<ConferenceMenuItem[]> {
-    const items = await this.listMenuItemRecords(conferenceId);
-    return items.map(mapMenuItem);
+    const result = await this.pool.query<MenuItemRow>(
+      `
+        SELECT
+          menu_item_id,
+          conference_id,
+          label,
+          display_no,
+          display_type,
+          action_type,
+          action_ref,
+          body,
+          hidden,
+          updated_at,
+          updated_by
+        FROM ${this.table("menu_items")}
+        WHERE conference_id = $1
+        ORDER BY created_at ASC, menu_item_id ASC
+      `,
+      [conferenceId],
+    );
+
+    return result.rows.map(mapMenuItemRow);
   }
 
   async getMenuItem(args: {
     conferenceId: string;
     menuItemId: string;
   }): Promise<ConferenceMenuItem | null> {
-    const item = await this.fetchMenuItemRecord(
-      args.conferenceId,
-      args.menuItemId,
+    const result = await this.pool.query<MenuItemRow>(
+      `
+        SELECT
+          menu_item_id,
+          conference_id,
+          label,
+          display_no,
+          display_type,
+          action_type,
+          action_ref,
+          body,
+          hidden,
+          updated_at,
+          updated_by
+        FROM ${this.table("menu_items")}
+        WHERE conference_id = $1
+          AND menu_item_id = $2
+        LIMIT 1
+      `,
+      [args.conferenceId, args.menuItemId],
     );
-    return item ? mapMenuItem(item) : null;
+
+    const row = result.rows[0];
+    return row ? mapMenuItemRow(row) : null;
   }
 
   async createMenuItem(args: {
@@ -840,33 +770,42 @@ class DynamoBbsDb implements BbsDb {
     hidden: boolean;
     updatedBy: string;
   }): Promise<string> {
-    const id = await this.nextMenuItemId(args.conferenceId);
-    const updatedAt = nowIso();
-    const item: DdbMenuItemRecord = {
-      PK: conferenceMenuPk(args.conferenceId),
-      SK: menuSk(id),
-      entityType: "MENU_ITEM",
-      conference_id: args.conferenceId,
-      menu_item_id: id,
-      label: args.label,
-      display_no: args.displayNo,
-      display_type: args.displayType,
-      action_type: args.actionType,
-      action_ref: args.actionRef,
-      body: args.body,
-      hidden: args.hidden ? 1 : 0,
-      enabled: args.hidden ? 0 : 1,
-      updated_at: updatedAt,
-      updated_by: args.updatedBy,
-    };
-    await this.client.send(
-      new PutCommand({
-        TableName: this.tableName,
-        Item: item,
-        ConditionExpression:
-          "attribute_not_exists(PK) AND attribute_not_exists(SK)",
-      }),
+    const id = generateId();
+    const now = nowIso();
+
+    await this.pool.query(
+      `
+        INSERT INTO ${this.table("menu_items")} (
+          menu_item_id,
+          conference_id,
+          label,
+          display_no,
+          display_type,
+          action_type,
+          action_ref,
+          body,
+          hidden,
+          created_at,
+          updated_at,
+          updated_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11)
+      `,
+      [
+        id,
+        args.conferenceId,
+        args.label,
+        args.displayNo,
+        args.displayType,
+        args.actionType,
+        args.actionRef,
+        args.body,
+        args.hidden,
+        now,
+        args.updatedBy,
+      ],
     );
+
     return id;
   }
 
@@ -874,18 +813,17 @@ class DynamoBbsDb implements BbsDb {
     conferenceId: string;
     menuItemId: string;
   }): Promise<boolean> {
-    const record = await this.fetchMenuItemRecord(
-      args.conferenceId,
-      args.menuItemId,
+    const result = await this.pool.query<{ menu_item_id: string }>(
+      `
+        DELETE FROM ${this.table("menu_items")}
+        WHERE conference_id = $1
+          AND menu_item_id = $2
+        RETURNING menu_item_id
+      `,
+      [args.conferenceId, args.menuItemId],
     );
-    if (!record) return false;
-    await this.client.send(
-      new DeleteCommand({
-        TableName: this.tableName,
-        Key: { PK: record.PK, SK: record.SK },
-      }),
-    );
-    return true;
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   async setMenuItemHidden(args: {
@@ -894,27 +832,27 @@ class DynamoBbsDb implements BbsDb {
     hidden: boolean;
     updatedBy: string;
   }): Promise<boolean> {
-    const record = await this.fetchMenuItemRecord(
-      args.conferenceId,
-      args.menuItemId,
+    const result = await this.pool.query<{ menu_item_id: string }>(
+      `
+        UPDATE ${this.table("menu_items")}
+        SET
+          hidden = $3,
+          updated_at = $4,
+          updated_by = $5
+        WHERE conference_id = $1
+          AND menu_item_id = $2
+        RETURNING menu_item_id
+      `,
+      [
+        args.conferenceId,
+        args.menuItemId,
+        args.hidden,
+        nowIso(),
+        args.updatedBy,
+      ],
     );
-    if (!record) return false;
-    const updatedAt = nowIso();
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { PK: record.PK, SK: record.SK },
-        UpdateExpression:
-          "SET hidden = :hidden, enabled = :enabled, updated_at = :updatedAt, updated_by = :updatedBy",
-        ExpressionAttributeValues: {
-          ":hidden": args.hidden ? 1 : 0,
-          ":enabled": args.hidden ? 0 : 1,
-          ":updatedAt": updatedAt,
-          ":updatedBy": args.updatedBy,
-        },
-      }),
-    );
-    return true;
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   async updateMenuItemMeta(args: {
@@ -925,28 +863,31 @@ class DynamoBbsDb implements BbsDb {
     displayType: string;
     updatedBy: string;
   }): Promise<boolean> {
-    const record = await this.fetchMenuItemRecord(
-      args.conferenceId,
-      args.menuItemId,
+    const result = await this.pool.query<{ menu_item_id: string }>(
+      `
+        UPDATE ${this.table("menu_items")}
+        SET
+          label = $3,
+          display_no = $4,
+          display_type = $5,
+          updated_at = $6,
+          updated_by = $7
+        WHERE conference_id = $1
+          AND menu_item_id = $2
+        RETURNING menu_item_id
+      `,
+      [
+        args.conferenceId,
+        args.menuItemId,
+        args.label,
+        args.displayNo,
+        args.displayType,
+        nowIso(),
+        args.updatedBy,
+      ],
     );
-    if (!record) return false;
-    const updatedAt = nowIso();
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { PK: record.PK, SK: record.SK },
-        UpdateExpression:
-          "SET label = :label, display_no = :displayNo, display_type = :displayType, updated_at = :updatedAt, updated_by = :updatedBy",
-        ExpressionAttributeValues: {
-          ":label": args.label,
-          ":displayNo": args.displayNo,
-          ":displayType": args.displayType,
-          ":updatedAt": updatedAt,
-          ":updatedBy": args.updatedBy,
-        },
-      }),
-    );
-    return true;
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   async updateMenuItemContent(args: {
@@ -956,76 +897,80 @@ class DynamoBbsDb implements BbsDb {
     body: string;
     updatedBy: string;
   }): Promise<boolean> {
-    const record = await this.fetchMenuItemRecord(
-      args.conferenceId,
-      args.menuItemId,
+    const result = await this.pool.query<{ menu_item_id: string }>(
+      `
+        UPDATE ${this.table("menu_items")}
+        SET
+          action_ref = $3,
+          body = $4,
+          updated_at = $5,
+          updated_by = $6
+        WHERE conference_id = $1
+          AND menu_item_id = $2
+        RETURNING menu_item_id
+      `,
+      [
+        args.conferenceId,
+        args.menuItemId,
+        args.actionRef,
+        args.body,
+        nowIso(),
+        args.updatedBy,
+      ],
     );
-    if (!record) return false;
-    const updatedAt = nowIso();
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { PK: record.PK, SK: record.SK },
-        UpdateExpression:
-          "SET action_ref = :actionRef, body = :body, updated_at = :updatedAt, updated_by = :updatedBy",
-        ExpressionAttributeValues: {
-          ":actionRef": args.actionRef,
-          ":body": args.body,
-          ":updatedAt": updatedAt,
-          ":updatedBy": args.updatedBy,
-        },
-      }),
-    );
-    return true;
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   async getBoard(conferenceId: string, boardId: string): Promise<Board | null> {
-    const result = await this.client.send(
-      new GetCommand({
-        TableName: this.tableName,
-        Key: { PK: boardPk(conferenceId, boardId), SK: "BOARD" },
-      }),
+    const result = await this.pool.query<BoardRow>(
+      `
+        SELECT board_id, conference_id, name
+        FROM ${this.table("boards")}
+        WHERE conference_id = $1
+          AND board_id = $2
+        LIMIT 1
+      `,
+      [conferenceId, boardId],
     );
-    const item = result.Item as DdbBoardItem | undefined;
-    return item ? mapBoardItem(item) : null;
+
+    const row = result.rows[0];
+    return row ? mapBoardRow(row) : null;
   }
 
   async listBoards(conferenceId: string): Promise<Board[]> {
-    const items = await this.queryAllItems<DdbBoardItem>({
-      TableName: this.tableName,
-      IndexName: GS1_NAME,
-      KeyConditionExpression: "GS1PK = :pk AND begins_with(GS1SK, :prefix)",
-      ExpressionAttributeValues: {
-        ":pk": boardGsPk(conferenceId),
-        ":prefix": "BOARD#",
-      },
-      ScanIndexForward: true,
-    });
-    return items.map(mapBoardItem);
+    const result = await this.pool.query<BoardRow>(
+      `
+        SELECT board_id, conference_id, name
+        FROM ${this.table("boards")}
+        WHERE conference_id = $1
+        ORDER BY created_at ASC, board_id ASC
+      `,
+      [conferenceId],
+    );
+
+    return result.rows.map(mapBoardRow);
   }
 
   async createBoard(args: {
     conferenceId: string;
     name: string;
   }): Promise<string> {
-    const id = generateUlid();
-    const item: DdbBoardItem = {
-      PK: boardPk(args.conferenceId, id),
-      SK: "BOARD",
-      GS1PK: boardGsPk(args.conferenceId),
-      GS1SK: boardGsSk(id),
-      entityType: "BOARD",
-      id,
-      name: args.name,
-      conference_id: args.conferenceId,
-    };
-    await this.client.send(
-      new PutCommand({
-        TableName: this.tableName,
-        Item: item,
-        ConditionExpression: "attribute_not_exists(PK)",
-      }),
+    const id = generateId();
+
+    await this.pool.query(
+      `
+        INSERT INTO ${this.table("boards")} (
+          board_id,
+          conference_id,
+          name,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4)
+      `,
+      [id, args.conferenceId, args.name, nowIso()],
     );
+
     return id;
   }
 
@@ -1034,90 +979,136 @@ class DynamoBbsDb implements BbsDb {
     boardId: string;
     name: string;
   }): Promise<boolean> {
-    const board = await this.getBoard(args.conferenceId, args.boardId);
-    if (!board || board.conferenceId !== args.conferenceId) return false;
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.tableName,
-        Key: { PK: boardPk(args.conferenceId, args.boardId), SK: "BOARD" },
-        UpdateExpression: "SET #name = :name",
-        ExpressionAttributeNames: { "#name": "name" },
-        ExpressionAttributeValues: { ":name": args.name },
-      }),
+    const result = await this.pool.query<{ board_id: string }>(
+      `
+        UPDATE ${this.table("boards")}
+        SET name = $3
+        WHERE conference_id = $1
+          AND board_id = $2
+        RETURNING board_id
+      `,
+      [args.conferenceId, args.boardId, args.name],
     );
-    return true;
+
+    return (result.rowCount ?? 0) > 0;
   }
 
   async deleteBoard(args: {
     conferenceId: string;
     boardId: string;
   }): Promise<boolean> {
-    const board = await this.getBoard(args.conferenceId, args.boardId);
-    if (!board || board.conferenceId !== args.conferenceId) return false;
-
-    const posts = await this.queryAllItems<DdbPostItem>({
-      TableName: this.tableName,
-      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-      ExpressionAttributeValues: {
-        ":pk": boardPk(args.conferenceId, args.boardId),
-        ":prefix": "POST#",
-      },
-    });
-    if (posts.length > 0) {
-      await this.batchDelete(
-        posts.map((post) => ({ PK: post.PK, SK: post.SK })),
+    return withDsqlTransaction(this.pool, async (client) => {
+      const board = await client.query<{ board_id: string }>(
+        `
+          SELECT board_id
+          FROM ${this.table("boards")}
+          WHERE conference_id = $1
+            AND board_id = $2
+          LIMIT 1
+        `,
+        [args.conferenceId, args.boardId],
       );
-    }
 
-    await this.client.send(
-      new DeleteCommand({
-        TableName: this.tableName,
-        Key: { PK: boardPk(args.conferenceId, args.boardId), SK: "BOARD" },
-      }),
-    );
-    return true;
+      if ((board.rowCount ?? 0) === 0) return false;
+
+      await client.query(
+        `
+          DELETE FROM ${this.table("posts")}
+          WHERE conference_id = $1
+            AND board_id = $2
+        `,
+        [args.conferenceId, args.boardId],
+      );
+
+      const deleted = await client.query<{ board_id: string }>(
+        `
+          DELETE FROM ${this.table("boards")}
+          WHERE conference_id = $1
+            AND board_id = $2
+          RETURNING board_id
+        `,
+        [args.conferenceId, args.boardId],
+      );
+
+      return (deleted.rowCount ?? 0) > 0;
+    });
   }
 
   async listPosts(args: ListPostsInput): Promise<PostsPage> {
     const pageSize = Math.max(1, Math.trunc(args.pageSize));
-    const exclusiveStartKey = decodeCursor(args.cursor ?? null) ?? undefined;
-    const result = await this.client.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-        ExpressionAttributeValues: {
-          ":pk": boardPk(args.conferenceId, args.boardId),
-          ":prefix": "POST#",
-        },
-        ScanIndexForward: false,
-        Limit: pageSize,
-        ExclusiveStartKey: exclusiveStartKey,
-      }),
-    );
+    const cursor = parsePostCursor(args.cursor);
 
-    const items = (result.Items ?? []) as DdbPostItem[];
-    const nextCursor = result.LastEvaluatedKey
-      ? encodeCursor(result.LastEvaluatedKey as Record<string, unknown>)
-      : null;
+    let sql = `
+      SELECT
+        post_id,
+        conference_id,
+        board_id,
+        title,
+        body,
+        author,
+        created_at
+      FROM ${this.table("posts")}
+      WHERE board_id = $1
+        AND conference_id = $2
+    `;
+    let values: unknown[] = [args.boardId, args.conferenceId, pageSize + 1];
+
+    if (cursor) {
+      sql += `
+        AND (created_at, post_id) < ($3::timestamptz, $4::text)
+      `;
+      values = [
+        args.boardId,
+        args.conferenceId,
+        cursor.createdAt,
+        cursor.postId,
+        pageSize + 1,
+      ];
+    }
+
+    sql += `
+      ORDER BY created_at DESC, post_id DESC
+      LIMIT $${values.length}
+    `;
+
+    const result = await this.pool.query<PostRow>(sql, values);
+    const rows = result.rows;
+    const hasMore = rows.length > pageSize;
+    const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
+    const lastRow = pageRows[pageRows.length - 1];
 
     return {
-      posts: items.map(mapPostSummaryItem),
-      nextCursor,
+      posts: pageRows.map(mapPostSummaryRow),
+      nextCursor:
+        hasMore && lastRow
+          ? encodeCursor({
+              createdAt: toIso(lastRow.created_at),
+              postId: lastRow.post_id,
+            })
+          : null,
     };
   }
 
   async getPost(postId: string): Promise<Post | null> {
-    const result = await this.client.send(
-      new QueryCommand({
-        TableName: this.tableName,
-        IndexName: GS1_NAME,
-        KeyConditionExpression: "GS1PK = :pk",
-        ExpressionAttributeValues: { ":pk": postGsPk(postId) },
-        Limit: 1,
-      }),
+    const result = await this.pool.query<PostRow>(
+      `
+        SELECT
+          post_id,
+          conference_id,
+          board_id,
+          title,
+          body,
+          author,
+          created_at
+        FROM ${this.table("posts")}
+        WHERE post_id = $1
+        LIMIT 1
+      `,
+      [postId],
     );
-    const item = result.Items?.[0] as DdbPostItem | undefined;
-    return item ? mapPostItem(item) : null;
+
+    const row = result.rows[0];
+    return row ? mapPostRow(row) : null;
   }
 
   async createPost(args: {
@@ -1127,42 +1118,44 @@ class DynamoBbsDb implements BbsDb {
     body: string;
     author: string;
   }): Promise<string> {
-    const id = generateUlid();
-    const createdAt = nowIso();
-    const item: DdbPostItem = {
-      PK: boardPk(args.conferenceId, args.boardId),
-      SK: postSk(id),
-      GS1PK: postGsPk(id),
-      GS1SK: "POST",
-      entityType: "POST",
-      post_id: id,
-      board_id: args.boardId,
-      conference_id: args.conferenceId,
-      title: args.title,
-      body: args.body,
-      author: args.author,
-      created_at: createdAt,
-    };
-    await this.client.send(
-      new PutCommand({
-        TableName: this.tableName,
-        Item: item,
-        ConditionExpression:
-          "attribute_not_exists(PK) AND attribute_not_exists(SK)",
-      }),
+    const id = generateId();
+
+    await this.pool.query(
+      `
+        INSERT INTO ${this.table("posts")} (
+          post_id,
+          conference_id,
+          board_id,
+          title,
+          body,
+          author,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `,
+      [
+        id,
+        args.conferenceId,
+        args.boardId,
+        args.title,
+        args.body,
+        args.author,
+        nowIso(),
+      ],
     );
+
     return id;
   }
 
   async close(): Promise<void> {
-    this.rawClient.destroy();
+    await this.pool.end();
   }
 
-  getDocumentClient(): DynamoDBDocumentClient {
-    return this.client;
+  getPool(): DsqlPool {
+    return this.pool;
   }
 
-  getTableName(): string {
-    return this.tableName;
+  getSchemaName(): string {
+    return this.schemaName;
   }
 }

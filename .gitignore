@@ -3,4 +3,12 @@ dist
 var
 .tmp
 .DS_Store
-
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+.aws/
+manifest/cdk.context.json

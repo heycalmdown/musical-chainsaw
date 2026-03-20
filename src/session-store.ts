@@ -1,10 +1,10 @@
 import {
-  DeleteCommand,
-  DynamoDBDocumentClient,
-  GetCommand,
-  PutCommand,
-  UpdateCommand,
-} from "@aws-sdk/lib-dynamodb";
+  createDsqlPool,
+  isRetryableDsqlError,
+  qualifyName,
+  type DsqlPool,
+} from "./dsql";
+import type { DsqlConfig } from "./config";
 
 export type SerializedSessionState = {
   ctx: {
@@ -56,63 +56,93 @@ export class ConflictError extends Error {
   }
 }
 
-type DdbSessionItem = {
-  PK: string;
-  SK: string;
-  entityType: "SESSION";
+type SessionRow = {
   session_id: string;
   nickname: string;
   term_rows: number;
   term_cols: number;
-  created_at_ms: number;
-  last_active_at_ms: number;
-  ctx: string;
-  mode: string;
+  created_at_ms: number | string;
+  last_active_at_ms: number | string;
+  ctx_json: string;
+  mode_json: string;
   toast: string | null;
   root_conference_id: string | null;
-  version: number;
-  expiresAt: number;
+  version: number | string;
+  expires_at_ms: number | string;
 };
 
-function sessionPk(sessionId: string): string {
-  return `SESSION#${sessionId}`;
+export type SessionStoreClientConfig = DsqlConfig;
+
+export function createSessionStoreClient(config: SessionStoreClientConfig): DsqlPool {
+  return createDsqlPool(config);
 }
 
-function mapItemToSessionData(item: DdbSessionItem): SessionData {
+function toNumber(value: number | string): number {
+  return typeof value === "number" ? value : Number(value);
+}
+
+function mapRowToSessionData(row: SessionRow): SessionData {
   return {
-    id: item.session_id,
-    nickname: item.nickname,
-    term: { rows: item.term_rows, cols: item.term_cols },
-    state: {
-      ctx: JSON.parse(item.ctx),
-      mode: JSON.parse(item.mode),
-      toast: item.toast ?? undefined,
-      rootConferenceId: item.root_conference_id,
+    id: row.session_id,
+    nickname: row.nickname,
+    term: {
+      rows: row.term_rows,
+      cols: row.term_cols,
     },
-    createdAtMs: item.created_at_ms,
-    lastActiveAtMs: item.last_active_at_ms,
-    version: item.version,
+    state: {
+      ctx: JSON.parse(row.ctx_json),
+      mode: JSON.parse(row.mode_json),
+      toast: row.toast ?? undefined,
+      rootConferenceId: row.root_conference_id,
+    },
+    createdAtMs: toNumber(row.created_at_ms),
+    lastActiveAtMs: toNumber(row.last_active_at_ms),
+    version: toNumber(row.version),
   };
 }
 
-export class DynamoSessionStore implements SessionStore {
+export class DsqlSessionStore implements SessionStore {
+  private readonly sessionsTable: string;
+
   constructor(
-    private readonly client: DynamoDBDocumentClient,
-    private readonly tableName: string,
-  ) {}
+    private readonly pool: DsqlPool,
+    schemaName: string,
+  ) {
+    this.sessionsTable = qualifyName(schemaName, "sessions");
+  }
 
   async get(sessionId: string): Promise<SessionData | null> {
-    const result = await this.client.send(
-      new GetCommand({
-        TableName: this.tableName,
-        Key: { PK: sessionPk(sessionId), SK: "SESSION" },
-      }),
+    const result = await this.pool.query<SessionRow>(
+      `
+        SELECT
+          session_id,
+          nickname,
+          term_rows,
+          term_cols,
+          created_at_ms,
+          last_active_at_ms,
+          ctx_json,
+          mode_json,
+          toast,
+          root_conference_id,
+          version,
+          expires_at_ms
+        FROM ${this.sessionsTable}
+        WHERE session_id = $1
+        LIMIT 1
+      `,
+      [sessionId],
     );
 
-    const item = result.Item as DdbSessionItem | undefined;
-    if (!item) return null;
+    const row = result.rows[0];
+    if (!row) return null;
 
-    return mapItemToSessionData(item);
+    if (toNumber(row.expires_at_ms) <= Date.now()) {
+      await this.delete(sessionId);
+      return null;
+    }
+
+    return mapRowToSessionData(row);
   }
 
   async create(args: {
@@ -123,35 +153,54 @@ export class DynamoSessionStore implements SessionStore {
     ttlMs: number;
   }): Promise<SessionData> {
     const now = Date.now();
-    const expiresAt = Math.floor((now + args.ttlMs) / 1000);
+    const expiresAtMs = now + args.ttlMs;
 
-    const item: DdbSessionItem = {
-      PK: sessionPk(args.sessionId),
-      SK: "SESSION",
-      entityType: "SESSION",
-      session_id: args.sessionId,
-      nickname: args.nickname,
-      term_rows: args.term.rows,
-      term_cols: args.term.cols,
-      created_at_ms: now,
-      last_active_at_ms: now,
-      ctx: JSON.stringify(args.state.ctx),
-      mode: JSON.stringify(args.state.mode),
-      toast: args.state.toast ?? null,
-      root_conference_id: args.state.rootConferenceId,
-      version: 1,
-      expiresAt,
-    };
-
-    await this.client.send(
-      new PutCommand({
-        TableName: this.tableName,
-        Item: item,
-        ConditionExpression: "attribute_not_exists(PK)",
-      }),
+    const result = await this.pool.query<SessionRow>(
+      `
+        INSERT INTO ${this.sessionsTable} (
+          session_id,
+          nickname,
+          term_rows,
+          term_cols,
+          created_at_ms,
+          last_active_at_ms,
+          ctx_json,
+          mode_json,
+          toast,
+          root_conference_id,
+          version,
+          expires_at_ms
+        )
+        VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, 1, $10)
+        RETURNING
+          session_id,
+          nickname,
+          term_rows,
+          term_cols,
+          created_at_ms,
+          last_active_at_ms,
+          ctx_json,
+          mode_json,
+          toast,
+          root_conference_id,
+          version,
+          expires_at_ms
+      `,
+      [
+        args.sessionId,
+        args.nickname,
+        args.term.rows,
+        args.term.cols,
+        now,
+        JSON.stringify(args.state.ctx),
+        JSON.stringify(args.state.mode),
+        args.state.toast ?? null,
+        args.state.rootConferenceId,
+        expiresAtMs,
+      ],
     );
 
-    return mapItemToSessionData(item);
+    return mapRowToSessionData(result.rows[0]!);
   }
 
   async update(args: {
@@ -161,74 +210,74 @@ export class DynamoSessionStore implements SessionStore {
     ttlMs: number;
   }): Promise<SessionData> {
     const now = Date.now();
-    const expiresAt = Math.floor((now + args.ttlMs) / 1000);
+    const expiresAtMs = now + args.ttlMs;
     const newVersion = args.expectedVersion + 1;
 
     try {
-      const result = await this.client.send(
-        new UpdateCommand({
-          TableName: this.tableName,
-          Key: { PK: sessionPk(args.sessionId), SK: "SESSION" },
-          UpdateExpression: `
-            SET ctx = :ctx,
-                #mode = :mode,
-                toast = :toast,
-                root_conference_id = :rootConfId,
-                last_active_at_ms = :lastActive,
-                #version = :newVersion,
-                expiresAt = :expiresAt
-          `,
-          ConditionExpression: "#version = :expectedVersion",
-          ExpressionAttributeNames: {
-            "#mode": "mode",
-            "#version": "version",
-          },
-          ExpressionAttributeValues: {
-            ":ctx": JSON.stringify(args.state.ctx),
-            ":mode": JSON.stringify(args.state.mode),
-            ":toast": args.state.toast ?? null,
-            ":rootConfId": args.state.rootConferenceId,
-            ":lastActive": now,
-            ":newVersion": newVersion,
-            ":expectedVersion": args.expectedVersion,
-            ":expiresAt": expiresAt,
-          },
-          ReturnValues: "ALL_NEW",
-        }),
+      const result = await this.pool.query<SessionRow>(
+        `
+          UPDATE ${this.sessionsTable}
+          SET
+            ctx_json = $3,
+            mode_json = $4,
+            toast = $5,
+            root_conference_id = $6,
+            last_active_at_ms = $7,
+            version = $8,
+            expires_at_ms = $9
+          WHERE session_id = $1
+            AND version = $2
+          RETURNING
+            session_id,
+            nickname,
+            term_rows,
+            term_cols,
+            created_at_ms,
+            last_active_at_ms,
+            ctx_json,
+            mode_json,
+            toast,
+            root_conference_id,
+            version,
+            expires_at_ms
+        `,
+        [
+          args.sessionId,
+          args.expectedVersion,
+          JSON.stringify(args.state.ctx),
+          JSON.stringify(args.state.mode),
+          args.state.toast ?? null,
+          args.state.rootConferenceId,
+          now,
+          newVersion,
+          expiresAtMs,
+        ],
       );
 
-      return mapItemToSessionData(result.Attributes as DdbSessionItem);
+      const row = result.rows[0];
+      if (!row) {
+        throw new ConflictError(`Session version conflict for ${args.sessionId}`);
+      }
+
+      return mapRowToSessionData(row);
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.name === "ConditionalCheckFailedException"
-      ) {
-        throw new ConflictError(
-          `Session version conflict for ${args.sessionId}`,
-        );
+      if (error instanceof ConflictError || isRetryableDsqlError(error)) {
+        throw new ConflictError(`Session version conflict for ${args.sessionId}`);
       }
       throw error;
     }
   }
 
   async delete(sessionId: string): Promise<boolean> {
-    try {
-      await this.client.send(
-        new DeleteCommand({
-          TableName: this.tableName,
-          Key: { PK: sessionPk(sessionId), SK: "SESSION" },
-          ConditionExpression: "attribute_exists(PK)",
-        }),
-      );
-      return true;
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.name === "ConditionalCheckFailedException"
-      ) {
-        return false;
-      }
-      throw error;
-    }
+    const result = await this.pool.query<{ session_id: string }>(
+      `
+        DELETE FROM ${this.sessionsTable}
+        WHERE session_id = $1
+        RETURNING session_id
+      `,
+      [sessionId],
+    );
+
+    return (result.rowCount ?? 0) > 0;
   }
 }

@@ -1,7 +1,11 @@
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { Terminal } from "@xterm/xterm";
-import type { CreateSessionResponse, ScreenModel, SessionEventResponse } from "../../src/protocol";
+import type {
+  CreateSessionResponse,
+  ScreenModel,
+  SessionEventResponse,
+} from "../../src/protocol";
 
 const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
@@ -17,10 +21,11 @@ function sanitizePlainText(value: string): string {
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const res = await fetch("https://api.kson.live" + url, init);
   const text = await res.text();
   const data = text ? (JSON.parse(text) as unknown) : {};
-  if (!res.ok) throw new Error((data as any)?.error?.message ?? `HTTP ${res.status}`);
+  if (!res.ok)
+    throw new Error((data as any)?.error?.message ?? `HTTP ${res.status}`);
   return data as T;
 }
 
@@ -30,7 +35,12 @@ function normalizePrompt(prompt: string | undefined): string {
   return p.length > 0 ? p : "> ";
 }
 
-function renderScreen(term: Terminal, screen: ScreenModel, prompt: string, draft: string): void {
+function renderScreen(
+  term: Terminal,
+  screen: ScreenModel,
+  prompt: string,
+  draft: string,
+): void {
   term.reset();
 
   term.writeln(screen.title);
@@ -58,7 +68,10 @@ function renderScreen(term: Terminal, screen: ScreenModel, prompt: string, draft
 }
 
 function shouldExit(screen: ScreenModel): boolean {
-  return Array.isArray(screen.actions) && screen.actions.some((a) => a.type === "exit");
+  return (
+    Array.isArray(screen.actions) &&
+    screen.actions.some((a) => a.type === "exit")
+  );
 }
 
 async function main(): Promise<void> {
@@ -73,7 +86,8 @@ async function main(): Promise<void> {
     convertEol: true,
     cursorStyle: "block",
     cursorBlink: false,
-    fontFamily: "ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontFamily:
+      "ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     fontSize: 14,
     theme: {
       background: "#0f1620",
@@ -112,11 +126,14 @@ async function main(): Promise<void> {
     try {
       while (queue.length > 0) {
         const line = queue.shift()!;
-        const res = await fetchJson<SessionEventResponse>(`/api/sessions/${sessionId}/events`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ input: line }),
-        });
+        const res = await fetchJson<SessionEventResponse>(
+          `/chol/sessions/${sessionId}/events`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ input: line }),
+          },
+        );
 
         applyScreen(res.screen);
 
@@ -129,7 +146,9 @@ async function main(): Promise<void> {
       }
     } catch (error) {
       term.writeln("");
-      term.writeln(`[error] ${error instanceof Error ? error.message : String(error)}`);
+      term.writeln(
+        `[error] ${error instanceof Error ? error.message : String(error)}`,
+      );
       sessionId = null;
       setConnected(false);
     } finally {
@@ -146,10 +165,14 @@ async function main(): Promise<void> {
     }
 
     try {
-      const res = await fetchJson<CreateSessionResponse>("/api/sessions", {
+      const res = await fetchJson<CreateSessionResponse>("/chol/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ nickname, rows: DEFAULT_ROWS, cols: DEFAULT_COLS }),
+        body: JSON.stringify({
+          nickname,
+          rows: DEFAULT_ROWS,
+          cols: DEFAULT_COLS,
+        }),
       });
 
       sessionId = res.sessionId;
@@ -158,7 +181,9 @@ async function main(): Promise<void> {
       applyScreen(res.screen);
     } catch (error) {
       term.writeln("");
-      term.writeln(`[error] ${error instanceof Error ? error.message : String(error)}`);
+      term.writeln(
+        `[error] ${error instanceof Error ? error.message : String(error)}`,
+      );
       sessionId = null;
       setConnected(false);
     }
@@ -174,7 +199,7 @@ async function main(): Promise<void> {
     draft = "";
 
     try {
-      await fetchJson(`/api/sessions/${toDelete}`, { method: "DELETE" });
+      await fetchJson(`/chol/sessions/${toDelete}`, { method: "DELETE" });
     } catch {}
   };
 

@@ -1,5 +1,5 @@
 {
-  "app": "npx tsx bin/cdk.ts",
+  "app": "pnpm exec tsx bin/cdk.ts",
   "watch": {
     "include": ["**"],
     "exclude": [
@@ -10,6 +10,7 @@
       "tsconfig.json",
       "package*.json",
       "yarn.lock",
+      "pnpm-lock.yaml",
       "node_modules",
       "test"
     ]

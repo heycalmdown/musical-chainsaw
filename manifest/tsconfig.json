@@ -18,7 +18,14 @@
     "inlineSources": true,
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
+    "skipLibCheck": true,
     "typeRoots": ["./node_modules/@types"],
   },
-  "exclude": ["node_modules", "cdk.out"],
+  "exclude": [
+    "node_modules",
+    "cdk.out",
+    "lib/construct/auto-spec/src",
+    "lib/construct/auto-spec/test",
+    "lib/construct/auto-spec/dist",
+  ],
 }
