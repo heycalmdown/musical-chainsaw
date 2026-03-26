@@ -728,10 +728,6 @@ export class BbsUiSession {
       }
 
       if (cmd === "B") {
-        if (this.mode.conference.isRoot) {
-          this.toast = "Boards are not available for root.";
-          return this.render();
-        }
         return await openBoardManage(this.mode.conference);
       }
 
@@ -2105,7 +2101,7 @@ export class BbsUiSession {
       lines,
       prompt: "> ",
       inputMode: "line",
-      hints: [`Commands: <num>=Open  0=${backLabel}`],
+      hints: [`Commands: <num>=Open  I=Menu Edit  E=Menu Design  0=${backLabel}`],
     });
   }
 
@@ -2148,7 +2144,7 @@ export class BbsUiSession {
     const hints = [
       "Commands: A=Add  L <n>=Label  N <n>=No  Y <n>=Type  U <n>=Target  H <n>=Hide  D <n>=Delete  0=Back",
     ];
-    if (!mode.conference.isRoot) hints.push("Extra: B=Boards");
+    hints.push("Extra: B=Boards");
     if (mode.conference.isRoot) hints.push("Extra: C=Conferences");
 
     return this.screen({

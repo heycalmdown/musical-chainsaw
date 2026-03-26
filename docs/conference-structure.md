@@ -251,7 +251,7 @@ root conference도 특별 UI가 아니라 같은 구조를 쓴다.
 
 - root도 welcome을 가진다
 - root도 menu를 가진다
-- root menu에서 다른 conference로 진입할 수 있다
+- root menu에서 다른 conference나 board로 진입할 수 있다
 - 차이는 `0` 입력 시 root에서는 종료, 일반 conference에서는 뒤로 가기라는 점 정도다
 
 ## 운영 관점 권장 사용법
