@@ -20,9 +20,15 @@ importers:
       '@types/lodash':
         specifier: ^4.17.24
         version: 4.17.24
+      constructs:
+        specifier: ^10.5.0
+        version: 10.5.1
       datadog-cdk-constructs-v2:
         specifier: ^3.9.0
         version: 3.9.0(aws-cdk-lib@2.243.0(constructs@10.5.1))(constructs@10.5.1)
+      dotenv:
+        specifier: ^17.3.1
+        version: 17.3.1
       es-toolkit:
         specifier: ^1.44.0
         version: 1.45.1
@@ -985,6 +991,10 @@ packages:
       constructs: ^10.0.5
     bundledDependencies:
       - loglevel
+
+  dotenv@17.3.1:
+    resolution: {integrity: sha512-IO8C/dzEb6O3F9/twg6ZLXz164a2fhTnEWb95H23Dm4OuN+92NmEAlTrupP9VW6Jm3sO26tQlqyvyi4CsnY9GA==}
+    engines: {node: '>=12'}
 
   emoji-regex@10.6.0:
     resolution: {integrity: sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==}
@@ -2466,6 +2476,8 @@ snapshots:
     dependencies:
       aws-cdk-lib: 2.243.0(constructs@10.5.1)
       constructs: 10.5.1
+
+  dotenv@17.3.1: {}
 
   emoji-regex@10.6.0: {}
 

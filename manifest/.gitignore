@@ -1,4 +1,6 @@
 *.js
+!lib/url-rewrite-function.js
 *.d.ts
+.env
 .cdk.staging
 cdk.out

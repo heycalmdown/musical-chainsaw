@@ -24,6 +24,34 @@ pnpm install
 pnpm run cdk:synth
 ```
 
+웹 프론트엔드는 Vite로 `dist/`에 빌드되고, 프론트 배포는 아래 3개 스택으로 분리된다.
+
+- `CholAcm`: `us-east-1`에 `bbs.kson.live`용 ACM 인증서 생성
+- `CholS3`: S3 버킷 생성 및 정적 산출물 업로드
+- `CholCloudFront`: CloudFront distribution, URL rewrite function, Route53 `A` record 생성
+
+```sh
+cd manifest
+pnpm run cdk:acm
+pnpm run cdk:s3
+```
+
+CloudFront 스택은 `manifest/.env` 또는 셸 환경변수의 `CERTIFICATE_ARN`을 사용한다.
+
+```sh
+cd manifest
+cp .env.example .env
+```
+
+`.env`에 실제 `us-east-1` ACM ARN을 넣은 뒤 CloudFront 스택을 배포한다.
+
+```sh
+export CERTIFICATE_ARN="<us-east-1 ACM ARN>"
+pnpm cdk:cf
+```
+
+`pnpm cdk:s3`는 먼저 루트 패키지에서 `npm run build:web`를 실행해 정적 파일을 만들고, 그 다음 `CholS3` 스택을 배포한다. 이후 프론트 재배포는 이 명령만 다시 실행하면 된다.
+
 Aurora DSQL 접속 정보가 필요합니다. 기본적으로 SSM의 `/chol/prod/bbs` prefix에서 자동 조회하고, 직접 env를 주면 그 값이 우선합니다.
 
 ```sh
@@ -47,7 +75,7 @@ npm run dev:web
 
 브라우저: `http://localhost:5173`
 
-현재 웹 클라이언트는 공개 게이트웨이 `https://api.kson.live`의 `/chol/*` API를 호출한다.
+현재 웹 클라이언트는 공개 게이트웨이 `https://api.kson.live`의 `/chol/*` API를 호출하고, 공개 웹 주소는 `https://bbs.kson.live`를 기준으로 배포한다.
 
 ## 동작/제약(MVP)
 

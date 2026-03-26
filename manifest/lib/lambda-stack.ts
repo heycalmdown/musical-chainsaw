@@ -1,4 +1,4 @@
-import { App, Fn, StackProps } from "aws-cdk-lib";
+import { App, StackProps } from "aws-cdk-lib";
 import { PolicyStatement } from "aws-cdk-lib/aws-iam";
 import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { FaasStack } from "faas-stack";
@@ -24,14 +24,6 @@ export class LambdaStack extends FaasStack {
         BBS_CONFIG_PREFIX: props.dsqlConfigPrefix,
         BBS_CONFIG_REGION: this.region,
         BBS_DSQL_REGION: this.region,
-      },
-      bundling: {
-        nodeModules: [
-          "@aws-sdk/client-ssm",
-          "@aws/aurora-dsql-node-postgres-connector",
-          "pg",
-          "pg-connection-string",
-        ],
       },
     };
 

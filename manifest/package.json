@@ -12,7 +12,10 @@
     "cdk:dsql": "cdk --profile k-faas deploy CholDsql",
     "cdk:lambda": "cdk --profile k-faas deploy CholLambda",
     "cdk:deploy": "cdk --profile k-faas deploy kDeployment",
-    "cdk:gateway": "cdk --profile k-faas deploy kGateway"
+    "cdk:gateway": "cdk --profile k-faas deploy kGateway",
+    "cdk:acm": "cdk --profile k-faas deploy CholAcm",
+    "cdk:s3": "npm --prefix .. run build:web && cdk --profile k-faas deploy CholS3",
+    "cdk:cf": "cdk --profile k-faas deploy CholCloudFront"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.160",
@@ -28,7 +31,9 @@
     "@aws-sdk/client-ssm": "^3.1005.0",
     "@aws/aurora-dsql-node-postgres-connector": "^0.1.8",
     "@types/lodash": "^4.17.24",
+    "constructs": "^10.5.0",
     "datadog-cdk-constructs-v2": "^3.9.0",
+    "dotenv": "^17.3.1",
     "es-toolkit": "^1.44.0",
     "faas-spec": "^1.0.0",
     "faas-stack": "^1.0.1",
