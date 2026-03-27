@@ -65,7 +65,7 @@ welcome 화면은 두 부분으로 구성된다.
 - `welcomeTitle`이 있으면 제목을 먼저 보여준다
 - `welcomeBody`가 있으면 terminal 폭에 맞춰 자동 줄바꿈해서 보여준다
 - 둘 다 비어 있으면 `(no welcome message)`를 보여준다
-- 마지막에는 `Last updated` 정보와 `Press any key to continue.`가 붙는다
+- 마지막에는 `Press any key to continue.`가 붙는다
 
 즉, welcome은 "읽고 지나가는 소개 화면"이다.
 
@@ -77,6 +77,8 @@ welcome 편집은 title과 body를 분리해서 수행한다.
 2. 본문 multiline 입력
 3. `.` 단독 입력으로 저장
 4. `0` 입력으로 취소
+
+제목은 빈 값으로 저장할 수 있고, 본문도 비워 둘 수 있다. 따라서 둘 다 비어 있는 welcome 상태도 만들 수 있다.
 
 본문은 여러 줄로 저장되며, 화면에서는 terminal 너비에 맞게 다시 감싸서 표시된다.
 

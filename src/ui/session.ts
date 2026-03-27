@@ -5,6 +5,7 @@ import type {
   Post,
   PostSummary,
 } from "../domain";
+import { APP_NAME, CONFERENCE_MANAGE_SCREEN_TITLE } from "../app-meta";
 import type { ScreenModel } from "../protocol";
 import type { BbsDb } from "../db";
 import type { SerializedSessionState } from "../session-store";
@@ -40,6 +41,7 @@ type ModeWelcomeEditBody = {
   kind: "welcomeEditBody";
   conference: Conference;
   title: string;
+  existingLines: string[];
   lines: string[];
 };
 type ModeMenu = {
@@ -529,10 +531,6 @@ export class BbsUiSession {
       }
 
       const title = inputTrimmed;
-      if (title.length === 0) {
-        this.toast = "Title cannot be empty.";
-        return this.render();
-      }
       if (title.length > 60) {
         this.toast = "Title must be <= 60 chars.";
         return this.render();
@@ -542,6 +540,7 @@ export class BbsUiSession {
         kind: "welcomeEditBody",
         conference: this.mode.conference,
         title,
+        existingLines: splitPlainLines(this.mode.conference.welcomeBody),
         lines: [],
       };
       return this.render();
@@ -554,7 +553,9 @@ export class BbsUiSession {
       }
 
       if (inputTrimmed === ".") {
-        const body = this.mode.lines.join("\n").trimEnd();
+        const bodySource =
+          this.mode.lines.length > 0 ? this.mode.lines : this.mode.existingLines;
+        const body = bodySource.join("\n").trimEnd();
         await this.db.updateConferenceWelcome({
           conferenceId: this.mode.conference.id,
           title: this.mode.title,
@@ -1860,7 +1861,7 @@ export class BbsUiSession {
     }
 
     return this.screen({
-      title: "test-bbs (Conference Manage)",
+      title: CONFERENCE_MANAGE_SCREEN_TITLE,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -1877,7 +1878,7 @@ export class BbsUiSession {
     lines.push("Enter name (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -1894,7 +1895,7 @@ export class BbsUiSession {
     lines.push("Enter new name (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -1903,8 +1904,6 @@ export class BbsUiSession {
 
   private renderWelcome(mode: ModeWelcome): ScreenModel {
     const lines: string[] = [];
-    lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
-    lines.push("");
     lines.push(`[Conference: ${sanitizePlainText(mode.conference.name)}]`);
     lines.push("");
 
@@ -1921,18 +1920,10 @@ export class BbsUiSession {
       lines.push("");
     }
 
-    const updatedBy = mode.conference.updatedBy
-      ? sanitizePlainText(mode.conference.updatedBy)
-      : "unknown";
-    const updatedAt = formatDate(mode.conference.updatedAt);
-    lines.push(
-      `Last updated: ${updatedBy}${updatedAt ? ` @ ${updatedAt}` : ""}`,
-    );
-    lines.push("");
     lines.push("Press any key to continue.");
 
     return this.screen({
-      title: "test-bbs",
+      title: "",
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -1951,10 +1942,10 @@ export class BbsUiSession {
       `Current title: ${sanitizePlainText(mode.conference.welcomeTitle || "(none)")}`,
     );
     lines.push("");
-    lines.push("Enter new title (0 to cancel):");
+    lines.push("Enter new title, or leave blank for none (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -1974,12 +1965,15 @@ export class BbsUiSession {
     lines.push(
       `[Conference: ${sanitizePlainText(mode.conference.name)}] Welcome Edit`,
     );
-    lines.push(`Title: ${sanitizePlainText(mode.title)}`);
+    lines.push(`Title: ${sanitizePlainText(mode.title || "(none)")}`);
     lines.push("");
-    lines.push("Enter body. '.' on its own line to finish. '0' to cancel.");
+    lines.push(
+      "Enter body to replace current text. '.' keeps current body. '0' cancels.",
+    );
     lines.push("-".repeat(Math.min(cols, 80)));
 
-    const preview = mode.lines.slice(-previewHeight);
+    const previewSource = mode.lines.length > 0 ? mode.lines : mode.existingLines;
+    const preview = previewSource.slice(-previewHeight);
     for (const line of preview) {
       for (const wrapped of wrapLine(sanitizePlainText(line), cols))
         lines.push(wrapped);
@@ -1988,7 +1982,7 @@ export class BbsUiSession {
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "multiline",
@@ -2009,7 +2003,7 @@ export class BbsUiSession {
     lines.push("Enter new title (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2042,7 +2036,7 @@ export class BbsUiSession {
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "multiline",
@@ -2054,7 +2048,7 @@ export class BbsUiSession {
     const hasMenuBody = menuBody.trim().length > 0;
     if (hasMenuBody) {
       return this.screen({
-        title: "test-bbs",
+        title: APP_NAME,
         lines: splitPlainLines(menuBody),
         prompt: "> ",
         inputMode: "line",
@@ -2097,7 +2091,7 @@ export class BbsUiSession {
 
     const backLabel = mode.conference.isRoot ? "Exit" : "Back";
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2148,7 +2142,7 @@ export class BbsUiSession {
     if (mode.conference.isRoot) hints.push("Extra: C=Conferences");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2167,7 +2161,7 @@ export class BbsUiSession {
     lines.push("Enter new label (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2187,7 +2181,7 @@ export class BbsUiSession {
     lines.push("Enter new display number (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2209,7 +2203,7 @@ export class BbsUiSession {
     lines.push("Enter new display type (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2236,7 +2230,7 @@ export class BbsUiSession {
     lines.push("0) Cancel");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2263,7 +2257,7 @@ export class BbsUiSession {
     lines.push("0) Cancel");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2281,7 +2275,7 @@ export class BbsUiSession {
     lines.push("Enter new URL (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2301,7 +2295,7 @@ export class BbsUiSession {
     lines.push("Enter new title (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2335,7 +2329,7 @@ export class BbsUiSession {
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "multiline",
@@ -2358,7 +2352,7 @@ export class BbsUiSession {
     lines.push("0) Cancel");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2377,7 +2371,7 @@ export class BbsUiSession {
     lines.push("Enter label (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2402,7 +2396,7 @@ export class BbsUiSession {
     lines.push("0) Cancel");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2429,7 +2423,7 @@ export class BbsUiSession {
     lines.push("0) Cancel");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2448,7 +2442,7 @@ export class BbsUiSession {
     lines.push("Enter page title (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2483,7 +2477,7 @@ export class BbsUiSession {
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "multiline",
@@ -2502,7 +2496,7 @@ export class BbsUiSession {
     lines.push("Enter URL (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2527,7 +2521,7 @@ export class BbsUiSession {
     }
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2546,7 +2540,7 @@ export class BbsUiSession {
     lines.push("Enter board name (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2565,7 +2559,7 @@ export class BbsUiSession {
     lines.push("Enter new name (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2593,7 +2587,7 @@ export class BbsUiSession {
     }
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2636,7 +2630,7 @@ export class BbsUiSession {
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2655,7 +2649,7 @@ export class BbsUiSession {
     lines.push("Enter title (0 to cancel):");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2689,7 +2683,7 @@ export class BbsUiSession {
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "multiline",
@@ -2730,7 +2724,7 @@ export class BbsUiSession {
     lines.push("-".repeat(Math.min(cols, 80)));
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
@@ -2755,7 +2749,7 @@ export class BbsUiSession {
     lines.push("Open this URL in your browser.");
 
     return this.screen({
-      title: "test-bbs",
+      title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
