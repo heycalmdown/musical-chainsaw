@@ -1,6 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { Terminal } from "@xterm/xterm";
+import { APP_NAME } from "../../src/app-meta";
 import type {
   CreateSessionResponse,
   ScreenModel,
@@ -43,25 +44,23 @@ function renderScreen(
 ): void {
   term.reset();
 
-  term.writeln(screen.title);
-
   if (screen.toast) {
-    term.writeln("");
     term.writeln(screen.toast);
   }
 
   if (screen.lines.length > 0) {
-    term.writeln("");
+    if (screen.toast) term.writeln("");
     for (const line of screen.lines) term.writeln(line);
   }
 
   if (screen.hints?.length) {
-    term.writeln("");
+    if (screen.toast || screen.lines.length > 0) term.writeln("");
     for (const hint of screen.hints) term.writeln(hint);
   }
 
   if (!shouldExit(screen)) {
-    term.writeln("");
+    if (screen.toast || screen.lines.length > 0 || screen.hints?.length)
+      term.writeln("");
     term.write(prompt);
     term.write(draft);
   }
@@ -79,6 +78,10 @@ async function main(): Promise<void> {
   const connectBtn = $("#connect") as HTMLButtonElement;
   const disconnectBtn = $("#disconnect") as HTMLButtonElement;
   const terminalEl = $("#terminal");
+  const brandEl = $(".brand");
+
+  document.title = APP_NAME;
+  brandEl.textContent = APP_NAME;
 
   const term = new Terminal({
     cols: DEFAULT_COLS,
