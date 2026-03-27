@@ -36,14 +36,7 @@ function normalizePrompt(prompt: string | undefined): string {
   return p.length > 0 ? p : "> ";
 }
 
-function renderScreen(
-  term: Terminal,
-  screen: ScreenModel,
-  prompt: string,
-  draft: string,
-): void {
-  term.reset();
-
+function appendScreen(term: Terminal, screen: ScreenModel, prompt: string): void {
   if (screen.toast) {
     term.writeln(screen.toast);
   }
@@ -62,7 +55,6 @@ function renderScreen(
     if (screen.toast || screen.lines.length > 0 || screen.hints?.length)
       term.writeln("");
     term.write(prompt);
-    term.write(draft);
   }
 }
 
@@ -114,7 +106,7 @@ async function main(): Promise<void> {
 
   const applyScreen = (screen: ScreenModel) => {
     currentPrompt = normalizePrompt(screen.prompt);
-    renderScreen(term, screen, currentPrompt, draft);
+    appendScreen(term, screen, currentPrompt);
   };
 
   const enqueue = (line: string) => {
@@ -144,6 +136,7 @@ async function main(): Promise<void> {
           sessionId = null;
           setConnected(false);
           draft = "";
+          queue.length = 0;
           break;
         }
       }
@@ -221,15 +214,16 @@ async function main(): Promise<void> {
 
     for (const ch of data) {
       if (ch === "\r" || ch === "\n") {
+        if (processing) continue;
         const line = draft;
         draft = "";
         term.write("\r\n");
-        term.write(currentPrompt);
         enqueue(line);
         continue;
       }
 
       if (ch === "\u007f" || ch === "\b") {
+        if (processing) continue;
         if (draft.length === 0) continue;
         draft = draft.slice(0, -1);
         term.write("\r\x1b[2K");
@@ -242,6 +236,8 @@ async function main(): Promise<void> {
         void disconnect();
         continue;
       }
+
+      if (processing) continue;
 
       if (/[\x00-\x1f\x7f]/.test(ch)) continue;
 
