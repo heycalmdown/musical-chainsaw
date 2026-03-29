@@ -194,10 +194,12 @@ async function main(): Promise<void> {
   term.onData((data) => {
     if (!sessionId) return;
     if (data.startsWith("\x1b")) return;
+    const acceptBufferedInput = !processing;
+    const normalizedData = data.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-    for (const ch of data) {
-      if (ch === "\r" || ch === "\n") {
-        if (processing) continue;
+    for (const ch of normalizedData) {
+      if (ch === "\n") {
+        if (!acceptBufferedInput) continue;
         const line = draft;
         draft = "";
         term.write("\r\n");
@@ -206,7 +208,7 @@ async function main(): Promise<void> {
       }
 
       if (ch === "\u007f" || ch === "\b") {
-        if (processing) continue;
+        if (!acceptBufferedInput) continue;
         if (draft.length === 0) continue;
         draft = draft.slice(0, -1);
         term.write("\r\x1b[2K");
@@ -220,7 +222,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      if (processing) continue;
+      if (!acceptBufferedInput) continue;
 
       if (/[\x00-\x1f\x7f]/.test(ch)) continue;
 
