@@ -1,8 +1,11 @@
+import type { StoredRichScreen } from "./ansi-screen";
+
 export type ScreenAction = { type: "exit" };
 
 export type ScreenModel = {
   title: string;
   lines: string[];
+  ansiIr: StoredRichScreen;
   prompt: string;
   inputMode: "line" | "multiline";
   hints?: string[];

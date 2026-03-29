@@ -7,6 +7,7 @@ import type {
   ScreenModel,
   SessionEventResponse,
 } from "../../src/protocol";
+import { renderRichScreenToAnsi } from "../../src/ansi-screen";
 
 const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
@@ -36,26 +37,8 @@ function normalizePrompt(prompt: string | undefined): string {
   return p.length > 0 ? p : "> ";
 }
 
-function appendScreen(term: Terminal, screen: ScreenModel, prompt: string): void {
-  if (screen.toast) {
-    term.writeln(screen.toast);
-  }
-
-  if (screen.lines.length > 0) {
-    if (screen.toast) term.writeln("");
-    for (const line of screen.lines) term.writeln(line);
-  }
-
-  if (screen.hints?.length) {
-    if (screen.toast || screen.lines.length > 0) term.writeln("");
-    for (const hint of screen.hints) term.writeln(hint);
-  }
-
-  if (!shouldExit(screen)) {
-    if (screen.toast || screen.lines.length > 0 || screen.hints?.length)
-      term.writeln("");
-    term.write(prompt);
-  }
+function appendScreen(term: Terminal, screen: ScreenModel): void {
+  term.write(renderRichScreenToAnsi(screen.ansiIr));
 }
 
 function shouldExit(screen: ScreenModel): boolean {
@@ -106,7 +89,7 @@ async function main(): Promise<void> {
 
   const applyScreen = (screen: ScreenModel) => {
     currentPrompt = normalizePrompt(screen.prompt);
-    appendScreen(term, screen, currentPrompt);
+    appendScreen(term, screen);
   };
 
   const enqueue = (line: string) => {

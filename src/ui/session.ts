@@ -9,6 +9,14 @@ import { APP_NAME, CONFERENCE_MANAGE_SCREEN_TITLE } from "../app-meta";
 import type { ScreenModel } from "../protocol";
 import type { BbsDb } from "../db";
 import type { SerializedSessionState } from "../session-store";
+import {
+  parseMarkupToRichScreen,
+  plainTextToRichScreen,
+  validateMarkup,
+  type ScreenNode,
+} from "../ansi-screen";
+
+type BaseScreenModel = Omit<ScreenModel, "toast" | "ansiIr">;
 
 type TerminalContext = {
   user: string;
@@ -308,6 +316,61 @@ function splitPlainLines(text: string): string[] {
   return sanitizePlainText(text).replace(/\r\n/g, "\n").split("\n");
 }
 
+function storedMarkupLines(text: string): string[] {
+  if (!text) return [];
+  return text.replace(/\r\n/g, "\n").split("\n");
+}
+
+function serializeMarkupBody(text: string): string {
+  return validateMarkup(text);
+}
+
+function renderStoredBodyToIr(text: string): ScreenNode[] {
+  if (!text) return [];
+  return parseMarkupToRichScreen(text);
+}
+
+function buildAnsiScreenIr(args: {
+  lines: string[];
+  prompt: string;
+  hints?: string[];
+  toast?: string;
+  actions?: ScreenModel["actions"];
+  bodyIr?: ScreenNode[];
+}): ScreenNode[] {
+  const nodes: ScreenNode[] = [{ type: "clearScreen" }];
+  const pushLine = (line: string) => {
+    nodes.push(...plainTextToRichScreen(line));
+  };
+
+  if (args.toast) {
+    pushLine(args.toast);
+  }
+
+  for (const line of args.lines) {
+    pushLine(line);
+  }
+
+  for (const hint of args.hints ?? []) {
+    pushLine(hint);
+  }
+
+  const shouldShowPrompt = !(
+    Array.isArray(args.actions) &&
+    args.actions.some((action) => action.type === "exit")
+  );
+
+  if (args.bodyIr) nodes.push(...args.bodyIr);
+  if (shouldShowPrompt) {
+    nodes.push(...plainTextToRichScreen(args.prompt));
+  }
+  return nodes;
+}
+
+function linesToIr(lines: string[]): ScreenNode[] {
+  return lines.flatMap((line) => plainTextToRichScreen(line));
+}
+
 function chunk<T>(items: T[], size: number): T[][] {
   if (size <= 0) return [items];
   const pages: T[][] = [];
@@ -540,7 +603,7 @@ export class BbsUiSession {
         kind: "welcomeEditBody",
         conference: this.mode.conference,
         title,
-        existingLines: splitPlainLines(this.mode.conference.welcomeBody),
+        existingLines: storedMarkupLines(this.mode.conference.welcomeBody),
         lines: [],
       };
       return this.render();
@@ -555,7 +618,14 @@ export class BbsUiSession {
       if (inputTrimmed === ".") {
         const bodySource =
           this.mode.lines.length > 0 ? this.mode.lines : this.mode.existingLines;
-        const body = bodySource.join("\n").trimEnd();
+        let body: string;
+        try {
+          body = serializeMarkupBody(bodySource.join("\n").trimEnd());
+        } catch (error) {
+          this.toast =
+            error instanceof Error ? error.message : "Invalid welcome markup.";
+          return this.render();
+        }
         await this.db.updateConferenceWelcome({
           conferenceId: this.mode.conference.id,
           title: this.mode.title,
@@ -601,7 +671,14 @@ export class BbsUiSession {
       }
 
       if (inputTrimmed === ".") {
-        const body = this.mode.lines.join("\n").trimEnd();
+        let body: string;
+        try {
+          body = serializeMarkupBody(this.mode.lines.join("\n").trimEnd());
+        } catch (error) {
+          this.toast =
+            error instanceof Error ? error.message : "Invalid menu markup.";
+          return this.render();
+        }
         await this.db.updateConferenceMenu({
           conferenceId: this.mode.conference.id,
           title: this.mode.title,
@@ -1096,7 +1173,14 @@ export class BbsUiSession {
       }
 
       if (inputTrimmed === ".") {
-        const body = this.mode.lines.join("\n").trimEnd();
+        let body: string;
+        try {
+          body = serializeMarkupBody(this.mode.lines.join("\n").trimEnd());
+        } catch (error) {
+          this.toast =
+            error instanceof Error ? error.message : "Invalid page markup.";
+          return this.render();
+        }
         await this.db.updateMenuItemContent({
           conferenceId: this.mode.conference.id,
           menuItemId: this.mode.item.id,
@@ -1307,7 +1391,14 @@ export class BbsUiSession {
       }
 
       if (inputTrimmed === ".") {
-        const body = this.mode.lines.join("\n").trimEnd();
+        let body: string;
+        try {
+          body = serializeMarkupBody(this.mode.lines.join("\n").trimEnd());
+        } catch (error) {
+          this.toast =
+            error instanceof Error ? error.message : "Invalid page markup.";
+          return this.render();
+        }
         await this.db.createMenuItem({
           conferenceId: this.mode.conference.id,
           label: this.mode.label,
@@ -1771,9 +1862,47 @@ export class BbsUiSession {
     return toast;
   }
 
-  private screen(screen: Omit<ScreenModel, "toast">): ScreenModel {
+  private screen(screen: BaseScreenModel): ScreenModel {
     const toast = this.takeToast();
-    return toast ? { ...screen, toast } : screen;
+    const merged: BaseScreenModel & { toast?: string } = toast
+      ? { ...screen, toast }
+      : screen;
+    return {
+      ...merged,
+      ansiIr: buildAnsiScreenIr({
+        lines: merged.lines,
+        prompt: merged.prompt,
+        hints: merged.hints,
+        toast: merged.toast,
+        actions: merged.actions,
+      }),
+    };
+  }
+
+  private screenWithAnsiBody(screen: BaseScreenModel, args: {
+    bodyIr: ScreenNode[];
+    insertAfterLine: number;
+  }): ScreenModel {
+    const toast = this.takeToast();
+    const merged: BaseScreenModel & { toast?: string } = toast
+      ? { ...screen, toast }
+      : screen;
+    const before = merged.lines.slice(0, args.insertAfterLine);
+    const after = merged.lines.slice(args.insertAfterLine);
+    const shouldShowPrompt = !(
+      Array.isArray(merged.actions) &&
+      merged.actions.some((action) => action.type === "exit")
+    );
+
+    const ansiIr: ScreenNode[] = [{ type: "clearScreen" }];
+    if (merged.toast) ansiIr.push(...linesToIr([merged.toast]));
+    ansiIr.push(...linesToIr(before));
+    ansiIr.push(...args.bodyIr);
+    ansiIr.push(...linesToIr(after));
+    if (merged.hints?.length) ansiIr.push(...linesToIr(merged.hints));
+    if (shouldShowPrompt) ansiIr.push(...linesToIr([merged.prompt]));
+
+    return { ...merged, ansiIr };
   }
 
   render(): ScreenModel {
@@ -1913,7 +2042,6 @@ export class BbsUiSession {
     }
 
     if (mode.conference.welcomeBody) {
-      lines.push(...wrapText(mode.conference.welcomeBody, this.ctx.cols));
       lines.push("");
     } else if (!mode.conference.welcomeTitle) {
       lines.push("(no welcome message)");
@@ -1922,11 +2050,14 @@ export class BbsUiSession {
 
     lines.push("Press any key to continue.");
 
-    return this.screen({
+    return this.screenWithAnsiBody({
       title: "",
       lines,
       prompt: "> ",
       inputMode: "line",
+    }, {
+      bodyIr: renderStoredBodyToIr(mode.conference.welcomeBody),
+      insertAfterLine: Math.max(0, lines.length - 1),
     });
   }
 
@@ -2047,11 +2178,14 @@ export class BbsUiSession {
     const menuBody = mode.conference.menuBody ?? "";
     const hasMenuBody = menuBody.trim().length > 0;
     if (hasMenuBody) {
-      return this.screen({
+      return this.screenWithAnsiBody({
         title: APP_NAME,
-        lines: splitPlainLines(menuBody),
+        lines: [],
         prompt: "> ",
         inputMode: "line",
+      }, {
+        bodyIr: renderStoredBodyToIr(menuBody),
+        insertAfterLine: 0,
       });
     }
 
@@ -2694,11 +2828,13 @@ export class BbsUiSession {
     const rows = this.ctx.rows;
     const cols = this.ctx.cols;
 
-    const overhead = 9;
-    const bodyHeight = Math.max(rows - overhead, 5);
-    const wrappedBody = wrapText(mode.item.body, cols);
-    const pages = chunk(wrappedBody, bodyHeight);
-    const totalPages = pages.length;
+    const bodyHeight = Math.max(rows - 9, 5);
+    const richBody = renderStoredBodyToIr(mode.item.body);
+    const richLines = richBody.filter(
+      (node): node is Extract<ScreenNode, { type: "line" }> => node.type === "line",
+    );
+    const pages = chunk(richLines, bodyHeight);
+    const totalPages = Math.max(pages.length, 1);
 
     let page = mode.page;
     if (page < 1) page = 1;
@@ -2720,15 +2856,18 @@ export class BbsUiSession {
     );
     lines.push(`Title: ${pageTitle}`);
     lines.push("-".repeat(Math.min(cols, 80)));
-    for (const line of pages[pageIndex] ?? []) lines.push(line);
+
     lines.push("-".repeat(Math.min(cols, 80)));
 
-    return this.screen({
+    return this.screenWithAnsiBody({
       title: APP_NAME,
       lines,
       prompt: "> ",
       inputMode: "line",
       hints: ["Commands: N=Next page  P=Prev page  0=Back"],
+    }, {
+      bodyIr: pages[pageIndex] ?? [],
+      insertAfterLine: lines.length - 1,
     });
   }
 
