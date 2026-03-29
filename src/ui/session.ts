@@ -338,7 +338,7 @@ function buildAnsiScreenIr(args: {
   actions?: ScreenModel["actions"];
   bodyIr?: ScreenNode[];
 }): ScreenNode[] {
-  const nodes: ScreenNode[] = [{ type: "clearScreen" }];
+  const nodes: ScreenNode[] = [];
   const pushLine = (line: string) => {
     nodes.push(...plainTextToRichScreen(line));
   };
@@ -1894,7 +1894,7 @@ export class BbsUiSession {
       merged.actions.some((action) => action.type === "exit")
     );
 
-    const ansiIr: ScreenNode[] = [{ type: "clearScreen" }];
+    const ansiIr: ScreenNode[] = [];
     if (merged.toast) ansiIr.push(...linesToIr([merged.toast]));
     ansiIr.push(...linesToIr(before));
     ansiIr.push(...args.bodyIr);
