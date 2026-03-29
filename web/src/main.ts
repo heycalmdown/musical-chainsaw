@@ -37,8 +37,19 @@ function normalizePrompt(prompt: string | undefined): string {
   return p.length > 0 ? p : "> ";
 }
 
+function writeSoftClear(term: Terminal): void {
+  term.write("\r\n".repeat(term.rows));
+  term.write("\x1b[H\x1b[2J");
+}
+
 function appendScreen(term: Terminal, screen: ScreenModel): void {
-  term.write(renderRichScreenToAnsi(screen.ansiIr));
+  for (const node of screen.ansiIr) {
+    if (node.type === "clearScreen") {
+      writeSoftClear(term);
+      continue;
+    }
+    term.write(renderRichScreenToAnsi([node]));
+  }
 }
 
 function shouldExit(screen: ScreenModel): boolean {
@@ -63,7 +74,7 @@ async function main(): Promise<void> {
     rows: DEFAULT_ROWS,
     convertEol: true,
     cursorStyle: "block",
-    cursorBlink: false,
+    cursorBlink: true,
     fontFamily:
       "ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     fontSize: 14,

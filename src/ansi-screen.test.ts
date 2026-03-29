@@ -46,7 +46,7 @@ test("render ANSI for color, inverse, and clear", () => {
   const ansi = renderRichScreenToAnsi(
     parseMarkupToRichScreen("[clear]\n[fg=red]RED[/fg] [inv]INV[/inv]"),
   );
-  assert.match(ansi, /\x1b\[2J\x1b\[H/);
+  assert.match(ansi, /\x1b\[H\x1b\[2J/);
   assert.match(ansi, /\x1b\[31mRED\x1b\[0m/);
   assert.match(ansi, /\x1b\[7mINV\x1b\[0m/);
 });

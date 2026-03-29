@@ -266,7 +266,7 @@ export function renderRichScreenToAnsi(doc: StoredRichScreen): string {
   let out = "";
   for (const node of doc) {
     if (node.type === "clearScreen") {
-      out += "\x1b[2J\x1b[H";
+      out += "\x1b[H\x1b[2J";
       continue;
     }
     out += spansToAnsi(node.spans);
