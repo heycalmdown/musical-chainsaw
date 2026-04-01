@@ -24,6 +24,7 @@ type TerminalContext = {
   rows: number;
   cols: number;
   postsPageSize: number;
+  timeZone: string;
 };
 
 type PostsPageState = {
@@ -279,13 +280,51 @@ function normalizeTerminalContext(
     Number.isFinite(input.postsPageSize)
       ? clampInt(input.postsPageSize, 1, 50)
       : 10;
+  const timeZone = normalizeTimeZone(input.timeZone);
 
-  return { user, rows, cols, postsPageSize };
+  return { user, rows, cols, postsPageSize, timeZone };
 }
 
-function formatDate(iso: string): string {
+function normalizeTimeZone(value: string | undefined): string {
+  if (typeof value !== "string") return "UTC";
+  const cleaned = value.trim();
+  if (!cleaned) return "UTC";
+  try {
+    new Intl.DateTimeFormat("ko-KR", { timeZone: cleaned }).format(new Date());
+    return cleaned;
+  } catch {
+    return "UTC";
+  }
+}
+
+function formatDate(iso: string, timeZone: string): string {
   if (!iso) return "";
-  return iso.replace("T", " ").replace("Z", "");
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return sanitizePlainText(iso);
+
+  const formatter = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: normalizeTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const lookup = new Map(parts.map((part) => [part.type, part.value]));
+  const year = lookup.get("year");
+  const month = lookup.get("month");
+  const day = lookup.get("day");
+  const hourPart = lookup.get("hour");
+  const minute = lookup.get("minute");
+
+  if (!year || !month || !day || !hourPart || !minute) {
+    return sanitizePlainText(iso);
+  }
+
+  const hour = hourPart === "24" ? "00" : hourPart;
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 function sanitizePlainText(value: string): string {
@@ -401,7 +440,7 @@ export class BbsUiSession {
 
   static deserialize(db: BbsDb, state: SerializedSessionState): BbsUiSession {
     const session = new BbsUiSession(db);
-    session.ctx = { ...state.ctx } as TerminalContext;
+    session.ctx = normalizeTerminalContext(state.ctx);
     session.mode = state.mode as Mode;
     session.toast = state.toast;
     session.rootConferenceId = state.rootConferenceId;
@@ -413,12 +452,14 @@ export class BbsUiSession {
     rows?: number;
     cols?: number;
     pageSize?: number;
+    timeZone?: string;
   }): Promise<ScreenModel> {
     this.ctx = normalizeTerminalContext({
       user: payload.user,
       rows: payload.rows,
       cols: payload.cols,
       postsPageSize: payload.pageSize,
+      timeZone: payload.timeZone,
     });
 
     const root = await this.db.getRootConference();
@@ -432,11 +473,16 @@ export class BbsUiSession {
     return this.render();
   }
 
-  setTerminalSize(payload: { rows?: number; cols?: number }): void {
+  setTerminalContext(payload: {
+    rows?: number;
+    cols?: number;
+    timeZone?: string;
+  }): void {
     this.ctx = normalizeTerminalContext({
       ...this.ctx,
       rows: payload.rows,
       cols: payload.cols,
+      timeZone: payload.timeZone ?? this.ctx.timeZone,
     });
   }
 
@@ -2760,7 +2806,7 @@ export class BbsUiSession {
       mode.posts.forEach((post, index) => {
         const displayNo = String(index + 1);
         lines.push(
-          `${displayNo}\t${sanitizePlainText(post.title)}\t(${sanitizePlainText(post.author)}, ${formatDate(post.createdAt)})`,
+          `${displayNo}\t${sanitizePlainText(post.title)}\t(${sanitizePlainText(post.author)}, ${formatDate(post.createdAt, this.ctx.timeZone)})`,
         );
       });
     }
@@ -2803,7 +2849,7 @@ export class BbsUiSession {
     );
     lines.push(`Title: ${sanitizePlainText(mode.post.title)}`);
     lines.push(`Author: ${sanitizePlainText(mode.post.author)}`);
-    lines.push(`Date: ${formatDate(mode.post.createdAt)}`);
+    lines.push(`Date: ${formatDate(mode.post.createdAt, this.ctx.timeZone)}`);
     lines.push("-".repeat(Math.min(cols, 80)));
     for (const line of pages[pageIndex] ?? []) lines.push(line);
     lines.push("-".repeat(Math.min(cols, 80)));

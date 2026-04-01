@@ -48,6 +48,16 @@ function sanitizePlainText(value: string): string {
   return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x1b]/g, "");
 }
 
+function normalizeOptionalTimeZone(value: unknown): string | undefined {
+  if (typeof value === "undefined") return undefined;
+  if (typeof value !== "string") {
+    throw new ApiRequestError(400, "BAD_REQUEST", "timeZone must be a string");
+  }
+
+  const cleaned = sanitizePlainText(value).trim();
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
 function normalizeNickname(value: unknown): string {
   if (typeof value !== "string") {
     throw new ApiRequestError(400, "BAD_REQUEST", "nickname must be a string");
@@ -84,6 +94,7 @@ function parseCreateSessionRequest(value: unknown): CreateSessionRequest {
     nickname: body.nickname,
     rows: typeof body.rows === "number" ? body.rows : undefined,
     cols: typeof body.cols === "number" ? body.cols : undefined,
+    timeZone: normalizeOptionalTimeZone(body.timeZone),
   };
 }
 
@@ -116,6 +127,7 @@ function parseSessionEventRequest(value: unknown): SessionEventRequest {
     input,
     rows: typeof body.rows === "number" ? body.rows : undefined,
     cols: typeof body.cols === "number" ? body.cols : undefined,
+    timeZone: normalizeOptionalTimeZone(body.timeZone),
   };
 }
 
@@ -173,6 +185,7 @@ export async function handleCreateSessionRequest(
     user: nickname,
     rows: term.rows,
     cols: term.cols,
+    timeZone: req.timeZone,
   });
 
   await sessionStore.create({
@@ -205,7 +218,11 @@ export async function handleSessionEventRequest(
       rows: req.rows ?? sessionData.term.rows,
       cols: req.cols ?? sessionData.term.cols,
     });
-    uiSession.setTerminalSize(term);
+    uiSession.setTerminalContext({
+      rows: term.rows,
+      cols: term.cols,
+      timeZone: req.timeZone,
+    });
     const screen = await uiSession.handleEvent(req.input);
 
     try {

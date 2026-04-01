@@ -14,7 +14,7 @@
     "cdk:deploy": "cdk --profile k-faas deploy kDeployment",
     "cdk:gateway": "cdk --profile k-faas deploy kGateway",
     "cdk:acm": "cdk --profile k-faas deploy CholAcm",
-    "cdk:s3": "npm --prefix .. run build:web && cdk --profile k-faas deploy CholS3",
+    "cdk:s3": "npm --prefix .. run build:web && cdk --profile k-faas deploy CholS3 && bash ./bin/invalidate-frontend.sh k-faas CholFrontendDistributionId '/*'",
     "cdk:cf": "cdk --profile k-faas deploy CholCloudFront"
   },
   "devDependencies": {

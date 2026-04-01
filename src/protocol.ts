@@ -17,6 +17,7 @@ export type CreateSessionRequest = {
   nickname: string;
   rows?: number;
   cols?: number;
+  timeZone?: string;
 };
 
 export type CreateSessionResponse = {
@@ -28,6 +29,7 @@ export type SessionEventRequest = {
   input: string;
   rows?: number;
   cols?: number;
+  timeZone?: string;
 };
 
 export type SessionEventResponse = {

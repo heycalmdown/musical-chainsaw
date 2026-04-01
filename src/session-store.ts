@@ -12,6 +12,7 @@ export type SerializedSessionState = {
     rows: number;
     cols: number;
     postsPageSize: number;
+    timeZone?: string;
   };
   mode: unknown;
   toast: string | undefined;

@@ -49,6 +49,13 @@ function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
+function getBrowserTimeZone(): string | undefined {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return typeof timeZone === "string" && timeZone.trim().length > 0
+    ? timeZone
+    : undefined;
+}
+
 function appendScreen(term: Terminal, screen: ScreenModel): void {
   for (const node of screen.ansiIr) {
     if (node.type === "clearScreen") {
@@ -106,6 +113,7 @@ async function main(): Promise<void> {
   let draft = "";
   let processing = false;
   const queue: string[] = [];
+  const timeZone = getBrowserTimeZone();
 
   const getTerminalRows = () => {
     const styles = window.getComputedStyle(terminalEl);
@@ -178,7 +186,7 @@ async function main(): Promise<void> {
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ input: line, ...resizeTerminal() }),
+            body: JSON.stringify({ input: line, ...resizeTerminal(), timeZone }),
           },
         );
 
@@ -222,6 +230,7 @@ async function main(): Promise<void> {
           nickname,
           rows: terminalSize.rows,
           cols: terminalSize.cols,
+          timeZone,
         }),
       });
 
