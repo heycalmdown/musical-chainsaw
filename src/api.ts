@@ -96,6 +96,12 @@ function parseSessionEventRequest(value: unknown): SessionEventRequest {
   if (typeof body.input !== "string") {
     throw new ApiRequestError(400, "BAD_REQUEST", "input must be a string");
   }
+  if (typeof body.rows !== "undefined" && typeof body.rows !== "number") {
+    throw new ApiRequestError(400, "BAD_REQUEST", "rows must be a number");
+  }
+  if (typeof body.cols !== "undefined" && typeof body.cols !== "number") {
+    throw new ApiRequestError(400, "BAD_REQUEST", "cols must be a number");
+  }
 
   const input = sanitizePlainText(body.input);
   if (input.length > 2000) {
@@ -106,7 +112,11 @@ function parseSessionEventRequest(value: unknown): SessionEventRequest {
     );
   }
 
-  return { input };
+  return {
+    input,
+    rows: typeof body.rows === "number" ? body.rows : undefined,
+    cols: typeof body.cols === "number" ? body.cols : undefined,
+  };
 }
 
 function requireSessionId(value: unknown): string {
@@ -191,6 +201,11 @@ export async function handleSessionEventRequest(
     }
 
     const uiSession = BbsUiSession.deserialize(db, sessionData.state);
+    const term = normalizeTermSize({
+      rows: req.rows ?? sessionData.term.rows,
+      cols: req.cols ?? sessionData.term.cols,
+    });
+    uiSession.setTerminalSize(term);
     const screen = await uiSession.handleEvent(req.input);
 
     try {
@@ -199,6 +214,7 @@ export async function handleSessionEventRequest(
       } else {
         await sessionStore.update({
           sessionId,
+          term,
           state: uiSession.serialize(),
           expectedVersion: sessionData.version,
           ttlMs: sessionTtlMs,

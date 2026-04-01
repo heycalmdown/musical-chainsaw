@@ -17,6 +17,7 @@ import {
 } from "../ansi-screen";
 
 type BaseScreenModel = Omit<ScreenModel, "toast" | "ansiIr">;
+const DEFAULT_PROMPT = "선택> ";
 
 type TerminalContext = {
   user: string;
@@ -332,7 +333,6 @@ function renderStoredBodyToIr(text: string): ScreenNode[] {
 
 function buildAnsiScreenIr(args: {
   lines: string[];
-  prompt: string;
   hints?: string[];
   toast?: string;
   actions?: ScreenModel["actions"];
@@ -355,20 +355,23 @@ function buildAnsiScreenIr(args: {
     pushLine(hint);
   }
 
-  const shouldShowPrompt = !(
-    Array.isArray(args.actions) &&
-    args.actions.some((action) => action.type === "exit")
-  );
-
   if (args.bodyIr) nodes.push(...args.bodyIr);
-  if (shouldShowPrompt) {
-    nodes.push(...plainTextToRichScreen(args.prompt));
-  }
   return nodes;
 }
 
 function linesToIr(lines: string[]): ScreenNode[] {
   return lines.flatMap((line) => plainTextToRichScreen(line));
+}
+
+function stripUserBanner(lines: string[]): string[] {
+  if (!lines[0]?.startsWith("user=")) return lines;
+  const next = lines.slice(1);
+  if (next[0] === "") return next.slice(1);
+  return next;
+}
+
+function normalizeScreenPrompt(prompt: string): string {
+  return prompt === "> " ? DEFAULT_PROMPT : prompt;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -427,6 +430,14 @@ export class BbsUiSession {
       this.mode = { kind: "conferenceManage", conferences };
     }
     return this.render();
+  }
+
+  setTerminalSize(payload: { rows?: number; cols?: number }): void {
+    this.ctx = normalizeTerminalContext({
+      ...this.ctx,
+      rows: payload.rows,
+      cols: payload.cols,
+    });
   }
 
   async handleEvent(inputRaw: string): Promise<ScreenModel> {
@@ -1867,11 +1878,14 @@ export class BbsUiSession {
     const merged: BaseScreenModel & { toast?: string } = toast
       ? { ...screen, toast }
       : screen;
+    const lines = stripUserBanner(merged.lines);
+    const prompt = normalizeScreenPrompt(merged.prompt);
     return {
       ...merged,
+      lines,
+      prompt,
       ansiIr: buildAnsiScreenIr({
-        lines: merged.lines,
-        prompt: merged.prompt,
+        lines,
         hints: merged.hints,
         toast: merged.toast,
         actions: merged.actions,
@@ -1879,20 +1893,23 @@ export class BbsUiSession {
     };
   }
 
-  private screenWithAnsiBody(screen: BaseScreenModel, args: {
-    bodyIr: ScreenNode[];
-    insertAfterLine: number;
-  }): ScreenModel {
+  private screenWithAnsiBody(
+    screen: BaseScreenModel,
+    args: {
+      bodyIr: ScreenNode[];
+      insertAfterLine: number;
+    },
+  ): ScreenModel {
     const toast = this.takeToast();
     const merged: BaseScreenModel & { toast?: string } = toast
       ? { ...screen, toast }
       : screen;
-    const before = merged.lines.slice(0, args.insertAfterLine);
-    const after = merged.lines.slice(args.insertAfterLine);
-    const shouldShowPrompt = !(
-      Array.isArray(merged.actions) &&
-      merged.actions.some((action) => action.type === "exit")
-    );
+    const lines = stripUserBanner(merged.lines);
+    const prompt = normalizeScreenPrompt(merged.prompt);
+    const removedLineCount = merged.lines.length - lines.length;
+    const insertAfterLine = Math.max(0, args.insertAfterLine - removedLineCount);
+    const before = lines.slice(0, insertAfterLine);
+    const after = lines.slice(insertAfterLine);
 
     const ansiIr: ScreenNode[] = [];
     if (merged.toast) ansiIr.push(...linesToIr([merged.toast]));
@@ -1900,13 +1917,38 @@ export class BbsUiSession {
     ansiIr.push(...args.bodyIr);
     ansiIr.push(...linesToIr(after));
     if (merged.hints?.length) ansiIr.push(...linesToIr(merged.hints));
-    if (shouldShowPrompt) ansiIr.push(...linesToIr([merged.prompt]));
 
-    return { ...merged, ansiIr };
+    return { ...merged, lines, prompt, ansiIr };
+  }
+
+  private shouldClearOnRender(): boolean {
+    switch (this.mode.kind) {
+      case "conferenceManage":
+      case "welcome":
+      case "menu":
+      case "menuEdit":
+      case "boardManage":
+      case "posts":
+      case "post":
+      case "page":
+      case "link":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private applyRenderScreenEffects(screen: ScreenModel): ScreenModel {
+    if (!this.shouldClearOnRender()) return screen;
+    return {
+      ...screen,
+      ansiIr: [{ type: "clearScreen" }, ...screen.ansiIr],
+    };
   }
 
   render(): ScreenModel {
-    switch (this.mode.kind) {
+    const screen = (() => {
+      switch (this.mode.kind) {
       case "conferenceManage":
         return this.renderConferenceManage(this.mode);
       case "conferenceAdd":
@@ -1975,7 +2017,10 @@ export class BbsUiSession {
         return this.renderPage(this.mode);
       case "link":
         return this.renderLink(this.mode);
-    }
+      }
+    })();
+
+    return this.applyRenderScreenEffects(screen);
   }
 
   private renderConferenceManage(mode: ModeConferenceManage): ScreenModel {

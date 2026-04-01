@@ -11,6 +11,9 @@ import { renderRichScreenToAnsi } from "../../src/ansi-screen";
 
 const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
+const MIN_ROWS = 10;
+const MAX_ROWS = 200;
+const DEFAULT_PROMPT = "선택> ";
 
 function $(selector: string): HTMLElement {
   const el = document.querySelector(selector);
@@ -32,14 +35,18 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function normalizePrompt(prompt: string | undefined): string {
-  if (typeof prompt !== "string") return "> ";
+  if (typeof prompt !== "string") return DEFAULT_PROMPT;
   const p = sanitizePlainText(prompt);
-  return p.length > 0 ? p : "> ";
+  return p.length > 0 ? p : DEFAULT_PROMPT;
 }
 
 function writeSoftClear(term: Terminal): void {
   term.write("\r\n".repeat(term.rows));
   term.write("\x1b[H\x1b[2J");
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.trunc(value)));
 }
 
 function appendScreen(term: Terminal, screen: ScreenModel): void {
@@ -52,6 +59,13 @@ function appendScreen(term: Terminal, screen: ScreenModel): void {
   }
 }
 
+function shouldShowPrompt(screen: ScreenModel): boolean {
+  return !(
+    Array.isArray(screen.actions) &&
+    screen.actions.some((action) => action.type === "exit")
+  );
+}
+
 function shouldExit(screen: ScreenModel): boolean {
   return (
     Array.isArray(screen.actions) &&
@@ -60,6 +74,7 @@ function shouldExit(screen: ScreenModel): boolean {
 }
 
 async function main(): Promise<void> {
+  const appEl = $("#app");
   const nicknameInput = $("#nickname") as HTMLInputElement;
   const connectBtn = $("#connect") as HTMLButtonElement;
   const disconnectBtn = $("#disconnect") as HTMLButtonElement;
@@ -77,21 +92,59 @@ async function main(): Promise<void> {
     cursorBlink: true,
     fontFamily:
       "ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    fontSize: 14,
+    fontSize: 21,
     theme: {
-      background: "#0f1620",
+      background: "#1900b8",
       foreground: "#e7eef7",
     },
   });
   term.open(terminalEl);
 
   let sessionId: string | null = null;
+  let lastScreen: ScreenModel | null = null;
   let currentPrompt = "> ";
   let draft = "";
   let processing = false;
   const queue: string[] = [];
 
+  const getTerminalRows = () => {
+    const styles = window.getComputedStyle(terminalEl);
+    const availableHeight =
+      terminalEl.clientHeight -
+      Number.parseFloat(styles.paddingTop) -
+      Number.parseFloat(styles.paddingBottom);
+
+    const measureEl = terminalEl.querySelector(
+      ".xterm-char-measure-element",
+    ) as HTMLElement | null;
+    const rect = measureEl?.getBoundingClientRect();
+    const cellHeight = rect?.height && rect.height > 0 ? rect.height : 25.2;
+
+    return clampInt(
+      Math.floor(Math.max(availableHeight, cellHeight) / cellHeight),
+      MIN_ROWS,
+      MAX_ROWS,
+    );
+  };
+
+  const resizeTerminal = () => {
+    const nextRows = getTerminalRows();
+    if (term.rows !== nextRows) {
+      term.resize(DEFAULT_COLS, nextRows);
+      if (lastScreen) {
+        writeSoftClear(term);
+        appendScreen(term, lastScreen);
+        if (shouldShowPrompt(lastScreen)) {
+          term.write(currentPrompt);
+          term.write(draft);
+        }
+      }
+    }
+    return { cols: DEFAULT_COLS, rows: nextRows };
+  };
+
   const setConnected = (connected: boolean) => {
+    appEl.classList.toggle("connected", connected);
     nicknameInput.disabled = connected;
     connectBtn.disabled = connected;
     disconnectBtn.disabled = !connected;
@@ -99,8 +152,13 @@ async function main(): Promise<void> {
   };
 
   const applyScreen = (screen: ScreenModel) => {
+    lastScreen = screen;
     currentPrompt = normalizePrompt(screen.prompt);
     appendScreen(term, screen);
+    if (shouldShowPrompt(screen)) {
+      term.write(currentPrompt);
+      term.write(draft);
+    }
   };
 
   const enqueue = (line: string) => {
@@ -120,7 +178,7 @@ async function main(): Promise<void> {
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ input: line }),
+            body: JSON.stringify({ input: line, ...resizeTerminal() }),
           },
         );
 
@@ -155,18 +213,19 @@ async function main(): Promise<void> {
     }
 
     try {
+      setConnected(true);
+      const terminalSize = resizeTerminal();
       const res = await fetchJson<CreateSessionResponse>("/chol/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           nickname,
-          rows: DEFAULT_ROWS,
-          cols: DEFAULT_COLS,
+          rows: terminalSize.rows,
+          cols: terminalSize.cols,
         }),
       });
 
       sessionId = res.sessionId;
-      setConnected(true);
       draft = "";
       applyScreen(res.screen);
     } catch (error) {
@@ -195,6 +254,8 @@ async function main(): Promise<void> {
 
   connectBtn.addEventListener("click", () => void connect());
   disconnectBtn.addEventListener("click", () => void disconnect());
+  window.addEventListener("resize", resizeTerminal);
+  resizeTerminal();
 
   nicknameInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") void connect();

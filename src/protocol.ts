@@ -26,6 +26,8 @@ export type CreateSessionResponse = {
 
 export type SessionEventRequest = {
   input: string;
+  rows?: number;
+  cols?: number;
 };
 
 export type SessionEventResponse = {

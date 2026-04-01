@@ -41,6 +41,7 @@ export interface SessionStore {
 
   update(args: {
     sessionId: string;
+    term?: { rows: number; cols: number };
     state: SerializedSessionState;
     expectedVersion: number;
     ttlMs: number;
@@ -205,6 +206,7 @@ export class DsqlSessionStore implements SessionStore {
 
   async update(args: {
     sessionId: string;
+    term?: { rows: number; cols: number };
     state: SerializedSessionState;
     expectedVersion: number;
     ttlMs: number;
@@ -218,13 +220,15 @@ export class DsqlSessionStore implements SessionStore {
         `
           UPDATE ${this.sessionsTable}
           SET
-            ctx_json = $3,
-            mode_json = $4,
-            toast = $5,
-            root_conference_id = $6,
-            last_active_at_ms = $7,
-            version = $8,
-            expires_at_ms = $9
+            term_rows = $3,
+            term_cols = $4,
+            ctx_json = $5,
+            mode_json = $6,
+            toast = $7,
+            root_conference_id = $8,
+            last_active_at_ms = $9,
+            version = $10,
+            expires_at_ms = $11
           WHERE session_id = $1
             AND version = $2
           RETURNING
@@ -244,6 +248,8 @@ export class DsqlSessionStore implements SessionStore {
         [
           args.sessionId,
           args.expectedVersion,
+          args.term?.rows ?? args.state.ctx.rows,
+          args.term?.cols ?? args.state.ctx.cols,
           JSON.stringify(args.state.ctx),
           JSON.stringify(args.state.mode),
           args.state.toast ?? null,

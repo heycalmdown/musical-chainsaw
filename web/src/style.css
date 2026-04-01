@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
-  --bg: #0b0f14;
-  --panel: #0f1620;
-  --border: #1b2a3a;
+  --bg: #1900b8;
+  --panel: #1900b8;
+  --border: rgba(231, 238, 247, 0.8);
   --text: #e7eef7;
-  --muted: #9bb0c6;
-  --button: #1e2f43;
-  --button-hover: #263a52;
-  --button-secondary: #142232;
-  --button-secondary-hover: #1a2b3f;
+  --muted: #e7eef7;
+  --button: #1900b8;
+  --button-hover: #1900b8;
+  --button-secondary: #1900b8;
+  --button-secondary-hover: #1900b8;
   --danger: #ff6675;
 }
 
@@ -40,20 +40,23 @@ body {
   height: 100%;
 }
 
+#app.connected .topbar {
+  display: none;
+}
+
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(15, 22, 32, 0.6);
-  backdrop-filter: blur(10px);
+  padding: 12px 16px 12px 36px;
+  background: var(--bg);
 }
 
 .brand {
   font-weight: 700;
   letter-spacing: 0.2px;
+  font-size: 1.5rem;
 }
 
 .controls {
@@ -70,27 +73,29 @@ body {
 }
 
 .label {
-  font-size: 12px;
+  font-size: 18px;
   color: var(--muted);
 }
 
 .input {
-  width: 180px;
-  padding: 8px 10px;
+  width: 270px;
+  padding: 12px 15px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: rgba(25, 0, 184, 0.2);
   color: var(--text);
   outline: none;
+  font-size: 1.5rem;
 }
 
 .button {
-  padding: 8px 12px;
+  padding: 12px 18px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--button);
+  background: rgba(25, 0, 184, 0.2);
   color: var(--text);
   cursor: pointer;
+  font-size: 1.5rem;
 }
 
 .button:hover {
@@ -115,18 +120,21 @@ body {
   min-height: 0;
   display: grid;
   grid-template-rows: 1fr;
-  padding: 16px;
 }
 
 .terminal-card {
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--panel);
-  overflow: hidden;
 }
 
 .terminal {
   height: 100%;
-  padding: 12px;
+  background: var(--bg);
+  padding-left: 36px;
+}
+
+.terminal .xterm,
+.terminal .xterm-viewport,
+.terminal .xterm-screen,
+.terminal .composition-view {
+  background: var(--bg) !important;
 }
