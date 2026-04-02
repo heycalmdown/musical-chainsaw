@@ -135,6 +135,13 @@ test("updated time zone persists through serialize and deserialize", async () =>
   assert.ok(postScreen.lines.includes("Date: 2026-03-31 17:00"));
 });
 
+test("welcome screen uses a plain prompt", async () => {
+  const session = new BbsUiSession(createFakeDb());
+  const welcomeScreen = await session.handleHello({ user: "kei" });
+
+  assert.equal(welcomeScreen.prompt, "> ");
+});
+
 test("write body line input is accepted without returning a new screen", async () => {
   let createPostCalls = 0;
   const session = new BbsUiSession(

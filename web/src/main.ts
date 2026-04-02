@@ -13,7 +13,6 @@ const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
 const MIN_ROWS = 10;
 const MAX_ROWS = 200;
-const DEFAULT_PROMPT = "선택> ";
 
 function $(selector: string): HTMLElement {
   const el = document.querySelector(selector);
@@ -143,7 +142,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 function normalizePrompt(prompt: string | undefined): string {
-  if (typeof prompt !== "string") return DEFAULT_PROMPT;
+  if (typeof prompt !== "string") return "> ";
   return sanitizePlainText(prompt);
 }
 

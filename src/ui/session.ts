@@ -17,7 +17,6 @@ import {
 } from "../ansi-screen";
 
 type BaseScreenModel = Omit<ScreenModel, "toast" | "ansiIr">;
-const DEFAULT_PROMPT = "선택> ";
 
 type TerminalContext = {
   user: string;
@@ -407,10 +406,6 @@ function stripUserBanner(lines: string[]): string[] {
   const next = lines.slice(1);
   if (next[0] === "") return next.slice(1);
   return next;
-}
-
-function normalizeScreenPrompt(prompt: string): string {
-  return prompt === "> " ? DEFAULT_PROMPT : prompt;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -1952,11 +1947,10 @@ export class BbsUiSession {
       ? { ...screen, toast }
       : screen;
     const lines = stripUserBanner(merged.lines);
-    const prompt = normalizeScreenPrompt(merged.prompt);
     return {
       ...merged,
       lines,
-      prompt,
+      prompt: merged.prompt,
       ansiIr: buildAnsiScreenIr({
         lines,
         hints: merged.hints,
@@ -1978,7 +1972,6 @@ export class BbsUiSession {
       ? { ...screen, toast }
       : screen;
     const lines = stripUserBanner(merged.lines);
-    const prompt = normalizeScreenPrompt(merged.prompt);
     const removedLineCount = merged.lines.length - lines.length;
     const insertAfterLine = Math.max(
       0,
@@ -1994,7 +1987,7 @@ export class BbsUiSession {
     ansiIr.push(...linesToIr(after));
     if (merged.hints?.length) ansiIr.push(...linesToIr(merged.hints));
 
-    return { ...merged, lines, prompt, ansiIr };
+    return { ...merged, lines, prompt: merged.prompt, ansiIr };
   }
 
   private shouldClearOnRender(): boolean {
@@ -2301,7 +2294,7 @@ export class BbsUiSession {
         {
           title: APP_NAME,
           lines: [],
-          prompt: "> ",
+          prompt: "선택> ",
           inputMode: "line",
         },
         {
@@ -2421,7 +2414,7 @@ export class BbsUiSession {
     return this.screen({
       title: APP_NAME,
       lines,
-      prompt: "> ",
+      prompt: "선택> ",
       inputMode: "line",
     });
   }
