@@ -82,17 +82,28 @@ function graphemeWidth(value: string): number {
   return Math.max(width, 1);
 }
 
-function removeLastGrapheme(value: string): {
-  next: string;
-  removedWidth: number;
-} | null {
-  const graphemes = splitGraphemes(value);
-  const removed = graphemes.pop();
-  if (!removed) return null;
+function textWidth(value: string): number {
+  return splitGraphemes(value).reduce((sum, grapheme) => sum + graphemeWidth(grapheme), 0);
+}
 
+function moveCursorLeft(width: number): string {
+  return width > 0 ? `\x1b[${width}D` : "";
+}
+
+function moveCursorRight(width: number): string {
+  return width > 0 ? `\x1b[${width}C` : "";
+}
+
+function updateDraftAtCursor(
+  value: string,
+  cursor: number,
+  nextGraphemes: string[],
+): { draft: string; cursor: number } {
+  const graphemes = splitGraphemes(value);
+  graphemes.splice(cursor, 0, ...nextGraphemes);
   return {
-    next: graphemes.join(""),
-    removedWidth: graphemeWidth(removed),
+    draft: graphemes.join(""),
+    cursor: cursor + nextGraphemes.length,
   };
 }
 
@@ -181,6 +192,7 @@ async function main(): Promise<void> {
   let lastScreen: ScreenModel | null = null;
   let currentPrompt = "> ";
   let draft = "";
+  let cursor = 0;
   let processing = false;
   const queue: string[] = [];
   const timeZone = getBrowserTimeZone();
@@ -215,6 +227,8 @@ async function main(): Promise<void> {
         if (shouldShowPrompt(lastScreen)) {
           term.write(currentPrompt);
           term.write(draft);
+          const tail = splitGraphemes(draft).slice(cursor).join("");
+          term.write(moveCursorLeft(textWidth(tail)));
         }
       }
     }
@@ -273,6 +287,7 @@ async function main(): Promise<void> {
           sessionId = null;
           setConnected(false);
           draft = "";
+          cursor = 0;
           queue.length = 0;
           break;
         }
@@ -284,6 +299,7 @@ async function main(): Promise<void> {
       );
       sessionId = null;
       setConnected(false);
+      cursor = 0;
     } finally {
       processing = false;
     }
@@ -314,6 +330,7 @@ async function main(): Promise<void> {
 
       sessionId = res.sessionId;
       draft = "";
+      cursor = 0;
       applyScreen(res.screen);
     } catch (error) {
       term.writeln("");
@@ -322,6 +339,7 @@ async function main(): Promise<void> {
       );
       sessionId = null;
       setConnected(false);
+      cursor = 0;
     }
   };
 
@@ -333,6 +351,7 @@ async function main(): Promise<void> {
     queue.length = 0;
     processing = false;
     draft = "";
+    cursor = 0;
 
     try {
       await fetchJson(`/chol/sessions/${toDelete}`, { method: "DELETE" });
@@ -361,6 +380,7 @@ async function main(): Promise<void> {
         if (!acceptBufferedInput) continue;
         const line = draft;
         draft = "";
+        cursor = 0;
         term.write("\r\n");
         enqueue(line);
         continue;
@@ -368,13 +388,22 @@ async function main(): Promise<void> {
 
       if (ch === "\u007f" || ch === "\b") {
         if (!acceptBufferedInput) continue;
-        if (draft.length === 0) continue;
-        const removed = removeLastGrapheme(draft);
+        if (cursor === 0) continue;
+        const graphemes = splitGraphemes(draft);
+        const removed = graphemes[cursor - 1];
         if (!removed) continue;
-        draft = removed.next;
-        const backspace = "\b".repeat(removed.removedWidth);
-        const erase = " ".repeat(removed.removedWidth);
-        term.write(backspace + erase + backspace);
+        const suffix = graphemes.slice(cursor).join("");
+        const removedWidth = graphemeWidth(removed);
+        const suffixWidth = textWidth(suffix);
+        graphemes.splice(cursor - 1, 1);
+        draft = graphemes.join("");
+        cursor -= 1;
+        term.write(
+          moveCursorLeft(removedWidth) +
+            suffix +
+            " ".repeat(removedWidth) +
+            moveCursorLeft(suffixWidth + removedWidth),
+        );
         continue;
       }
 
@@ -385,12 +414,76 @@ async function main(): Promise<void> {
 
       if (!acceptBufferedInput) continue;
 
+      if (ch === "\u0001") {
+        const prefix = splitGraphemes(draft).slice(0, cursor).join("");
+        cursor = 0;
+        term.write(moveCursorLeft(textWidth(prefix)));
+        continue;
+      }
+
+      if (ch === "\u0002") {
+        if (cursor === 0) continue;
+        const graphemes = splitGraphemes(draft);
+        cursor -= 1;
+        term.write(moveCursorLeft(graphemeWidth(graphemes[cursor] ?? "")));
+        continue;
+      }
+
+      if (ch === "\u0005") {
+        const suffix = splitGraphemes(draft).slice(cursor).join("");
+        cursor = splitGraphemes(draft).length;
+        term.write(moveCursorRight(textWidth(suffix)));
+        continue;
+      }
+
+      if (ch === "\u0006") {
+        const graphemes = splitGraphemes(draft);
+        if (cursor >= graphemes.length) continue;
+        term.write(moveCursorRight(graphemeWidth(graphemes[cursor] ?? "")));
+        cursor += 1;
+        continue;
+      }
+
+      if (ch === "\u000b") {
+        const graphemes = splitGraphemes(draft);
+        const suffix = graphemes.slice(cursor).join("");
+        const suffixWidth = textWidth(suffix);
+        if (suffixWidth === 0) continue;
+        draft = graphemes.slice(0, cursor).join("");
+        term.write(" ".repeat(suffixWidth) + moveCursorLeft(suffixWidth));
+        continue;
+      }
+
+      if (ch === "\u0015") {
+        if (cursor === 0) continue;
+        const graphemes = splitGraphemes(draft);
+        const prefix = graphemes.slice(0, cursor).join("");
+        const suffix = graphemes.slice(cursor).join("");
+        const prefixWidth = textWidth(prefix);
+        const suffixWidth = textWidth(suffix);
+        draft = suffix;
+        cursor = 0;
+        term.write(
+          moveCursorLeft(prefixWidth) +
+            suffix +
+            " ".repeat(prefixWidth) +
+            moveCursorLeft(suffixWidth + prefixWidth),
+        );
+        continue;
+      }
+
       if (/[\x00-\x1f\x7f]/.test(ch)) continue;
 
       const safe = sanitizePlainText(ch);
       if (!safe) continue;
-      draft += safe;
-      term.write(safe);
+      const inserted = splitGraphemes(safe);
+      const graphemes = splitGraphemes(draft);
+      const suffix = graphemes.slice(cursor).join("");
+      const suffixWidth = textWidth(suffix);
+      const next = updateDraftAtCursor(draft, cursor, inserted);
+      draft = next.draft;
+      cursor = next.cursor;
+      term.write(safe + suffix + moveCursorLeft(suffixWidth));
     }
   });
 
