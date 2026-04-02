@@ -107,6 +107,32 @@ function updateDraftAtCursor(
   };
 }
 
+function deleteDraftRange(
+  value: string,
+  start: number,
+  end: number,
+): {
+  draft: string;
+  removedWidth: number;
+  suffix: string;
+  suffixWidth: number;
+} {
+  const graphemes = splitGraphemes(value);
+  const removed = graphemes.slice(start, end).join("");
+  const suffix = graphemes.slice(end).join("");
+  graphemes.splice(start, end - start);
+  return {
+    draft: graphemes.join(""),
+    removedWidth: textWidth(removed),
+    suffix,
+    suffixWidth: textWidth(suffix),
+  };
+}
+
+function isWordBoundary(grapheme: string): boolean {
+  return /^\s$/u.test(grapheme);
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch("https://api.kson.live" + url, init);
   const text = await res.text();
@@ -352,6 +378,8 @@ async function main(): Promise<void> {
     processing = false;
     draft = "";
     cursor = 0;
+    term.writeln("");
+    term.writeln("Session ended.");
 
     try {
       await fetchJson(`/chol/sessions/${toDelete}`, { method: "DELETE" });
@@ -389,20 +417,14 @@ async function main(): Promise<void> {
       if (ch === "\u007f" || ch === "\b") {
         if (!acceptBufferedInput) continue;
         if (cursor === 0) continue;
-        const graphemes = splitGraphemes(draft);
-        const removed = graphemes[cursor - 1];
-        if (!removed) continue;
-        const suffix = graphemes.slice(cursor).join("");
-        const removedWidth = graphemeWidth(removed);
-        const suffixWidth = textWidth(suffix);
-        graphemes.splice(cursor - 1, 1);
-        draft = graphemes.join("");
+        const edit = deleteDraftRange(draft, cursor - 1, cursor);
+        draft = edit.draft;
         cursor -= 1;
         term.write(
-          moveCursorLeft(removedWidth) +
-            suffix +
-            " ".repeat(removedWidth) +
-            moveCursorLeft(suffixWidth + removedWidth),
+          moveCursorLeft(edit.removedWidth) +
+            edit.suffix +
+            " ".repeat(edit.removedWidth) +
+            moveCursorLeft(edit.suffixWidth + edit.removedWidth),
         );
         continue;
       }
@@ -426,6 +448,23 @@ async function main(): Promise<void> {
         const graphemes = splitGraphemes(draft);
         cursor -= 1;
         term.write(moveCursorLeft(graphemeWidth(graphemes[cursor] ?? "")));
+        continue;
+      }
+
+      if (ch === "\u0004") {
+        const graphemes = splitGraphemes(draft);
+        if (graphemes.length === 0) {
+          void disconnect();
+          continue;
+        }
+        if (cursor >= graphemes.length) continue;
+        const edit = deleteDraftRange(draft, cursor, cursor + 1);
+        draft = edit.draft;
+        term.write(
+          edit.suffix +
+            " ".repeat(edit.removedWidth) +
+            moveCursorLeft(edit.suffixWidth + edit.removedWidth),
+        );
         continue;
       }
 
@@ -468,6 +507,24 @@ async function main(): Promise<void> {
             suffix +
             " ".repeat(prefixWidth) +
             moveCursorLeft(suffixWidth + prefixWidth),
+        );
+        continue;
+      }
+
+      if (ch === "\u0017") {
+        if (cursor === 0) continue;
+        const graphemes = splitGraphemes(draft);
+        let start = cursor;
+        while (start > 0 && isWordBoundary(graphemes[start - 1] ?? "")) start -= 1;
+        while (start > 0 && !isWordBoundary(graphemes[start - 1] ?? "")) start -= 1;
+        const edit = deleteDraftRange(draft, start, cursor);
+        draft = edit.draft;
+        cursor = start;
+        term.write(
+          moveCursorLeft(edit.removedWidth) +
+            edit.suffix +
+            " ".repeat(edit.removedWidth) +
+            moveCursorLeft(edit.suffixWidth + edit.removedWidth),
         );
         continue;
       }

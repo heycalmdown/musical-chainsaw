@@ -65,7 +65,6 @@ welcome 화면은 두 부분으로 구성된다.
 - `welcomeTitle`이 있으면 제목을 먼저 보여준다
 - `welcomeBody`가 있으면 terminal 폭에 맞춰 자동 줄바꿈해서 보여준다
 - 둘 다 비어 있으면 `(no welcome message)`를 보여준다
-- 마지막에는 `Press any key to continue.`가 붙는다
 
 즉, welcome은 "읽고 지나가는 소개 화면"이다.
 

@@ -699,7 +699,9 @@ export class BbsUiSession {
 
       if (inputTrimmed === ".") {
         const bodySource =
-          this.mode.lines.length > 0 ? this.mode.lines : this.mode.existingLines;
+          this.mode.lines.length > 0
+            ? this.mode.lines
+            : this.mode.existingLines;
         let body: string;
         try {
           body = serializeMarkupBody(bodySource.join("\n").trimEnd());
@@ -1978,7 +1980,10 @@ export class BbsUiSession {
     const lines = stripUserBanner(merged.lines);
     const prompt = normalizeScreenPrompt(merged.prompt);
     const removedLineCount = merged.lines.length - lines.length;
-    const insertAfterLine = Math.max(0, args.insertAfterLine - removedLineCount);
+    const insertAfterLine = Math.max(
+      0,
+      args.insertAfterLine - removedLineCount,
+    );
     const before = lines.slice(0, insertAfterLine);
     const after = lines.slice(insertAfterLine);
 
@@ -2020,74 +2025,74 @@ export class BbsUiSession {
   render(): ScreenModel {
     const screen = (() => {
       switch (this.mode.kind) {
-      case "conferenceManage":
-        return this.renderConferenceManage(this.mode);
-      case "conferenceAdd":
-        return this.renderConferenceAdd(this.mode);
-      case "conferenceRename":
-        return this.renderConferenceRename(this.mode);
-      case "welcome":
-        return this.renderWelcome(this.mode);
-      case "welcomeEditTitle":
-        return this.renderWelcomeEditTitle(this.mode);
-      case "welcomeEditBody":
-        return this.renderWelcomeEditBody(this.mode);
-      case "menu":
-        return this.renderMenu(this.mode);
-      case "menuDesignTitle":
-        return this.renderMenuDesignTitle(this.mode);
-      case "menuDesignBody":
-        return this.renderMenuDesignBody(this.mode);
-      case "menuEdit":
-        return this.renderMenuEdit(this.mode);
-      case "menuEditLabel":
-        return this.renderMenuEditLabel(this.mode);
-      case "menuEditDisplayNo":
-        return this.renderMenuEditDisplayNo(this.mode);
-      case "menuEditDisplayType":
-        return this.renderMenuEditDisplayType(this.mode);
-      case "menuEditBoardSelect":
-        return this.renderMenuEditBoardSelect(this.mode);
-      case "menuEditConferenceSelect":
-        return this.renderMenuEditConferenceSelect(this.mode);
-      case "menuEditLink":
-        return this.renderMenuEditLink(this.mode);
-      case "menuEditPageTitle":
-        return this.renderMenuEditPageTitle(this.mode);
-      case "menuEditPageBody":
-        return this.renderMenuEditPageBody(this.mode);
-      case "menuAddType":
-        return this.renderMenuAddType(this.mode);
-      case "menuAddLabel":
-        return this.renderMenuAddLabel(this.mode);
-      case "menuAddBoardSelect":
-        return this.renderMenuAddBoardSelect(this.mode);
-      case "menuAddConferenceSelect":
-        return this.renderMenuAddConferenceSelect(this.mode);
-      case "menuAddPageTitle":
-        return this.renderMenuAddPageTitle(this.mode);
-      case "menuAddPageBody":
-        return this.renderMenuAddPageBody(this.mode);
-      case "menuAddLink":
-        return this.renderMenuAddLink(this.mode);
-      case "boardManage":
-        return this.renderBoardManage(this.mode);
-      case "boardAdd":
-        return this.renderBoardAdd(this.mode);
-      case "boardRename":
-        return this.renderBoardRename(this.mode);
-      case "posts":
-        return this.renderPosts(this.mode);
-      case "post":
-        return this.renderPost(this.mode);
-      case "writeTitle":
-        return this.renderWriteTitle(this.mode);
-      case "writeBody":
-        return this.renderWriteBody(this.mode);
-      case "page":
-        return this.renderPage(this.mode);
-      case "link":
-        return this.renderLink(this.mode);
+        case "conferenceManage":
+          return this.renderConferenceManage(this.mode);
+        case "conferenceAdd":
+          return this.renderConferenceAdd(this.mode);
+        case "conferenceRename":
+          return this.renderConferenceRename(this.mode);
+        case "welcome":
+          return this.renderWelcome(this.mode);
+        case "welcomeEditTitle":
+          return this.renderWelcomeEditTitle(this.mode);
+        case "welcomeEditBody":
+          return this.renderWelcomeEditBody(this.mode);
+        case "menu":
+          return this.renderMenu(this.mode);
+        case "menuDesignTitle":
+          return this.renderMenuDesignTitle(this.mode);
+        case "menuDesignBody":
+          return this.renderMenuDesignBody(this.mode);
+        case "menuEdit":
+          return this.renderMenuEdit(this.mode);
+        case "menuEditLabel":
+          return this.renderMenuEditLabel(this.mode);
+        case "menuEditDisplayNo":
+          return this.renderMenuEditDisplayNo(this.mode);
+        case "menuEditDisplayType":
+          return this.renderMenuEditDisplayType(this.mode);
+        case "menuEditBoardSelect":
+          return this.renderMenuEditBoardSelect(this.mode);
+        case "menuEditConferenceSelect":
+          return this.renderMenuEditConferenceSelect(this.mode);
+        case "menuEditLink":
+          return this.renderMenuEditLink(this.mode);
+        case "menuEditPageTitle":
+          return this.renderMenuEditPageTitle(this.mode);
+        case "menuEditPageBody":
+          return this.renderMenuEditPageBody(this.mode);
+        case "menuAddType":
+          return this.renderMenuAddType(this.mode);
+        case "menuAddLabel":
+          return this.renderMenuAddLabel(this.mode);
+        case "menuAddBoardSelect":
+          return this.renderMenuAddBoardSelect(this.mode);
+        case "menuAddConferenceSelect":
+          return this.renderMenuAddConferenceSelect(this.mode);
+        case "menuAddPageTitle":
+          return this.renderMenuAddPageTitle(this.mode);
+        case "menuAddPageBody":
+          return this.renderMenuAddPageBody(this.mode);
+        case "menuAddLink":
+          return this.renderMenuAddLink(this.mode);
+        case "boardManage":
+          return this.renderBoardManage(this.mode);
+        case "boardAdd":
+          return this.renderBoardAdd(this.mode);
+        case "boardRename":
+          return this.renderBoardRename(this.mode);
+        case "posts":
+          return this.renderPosts(this.mode);
+        case "post":
+          return this.renderPost(this.mode);
+        case "writeTitle":
+          return this.renderWriteTitle(this.mode);
+        case "writeBody":
+          return this.renderWriteBody(this.mode);
+        case "page":
+          return this.renderPage(this.mode);
+        case "link":
+          return this.renderLink(this.mode);
       }
     })();
 
@@ -2164,17 +2169,18 @@ export class BbsUiSession {
       lines.push("");
     }
 
-    lines.push("Press any key to continue.");
-
-    return this.screenWithAnsiBody({
-      title: "",
-      lines,
-      prompt: "> ",
-      inputMode: "line",
-    }, {
-      bodyIr: renderStoredBodyToIr(mode.conference.welcomeBody),
-      insertAfterLine: Math.max(0, lines.length - 1),
-    });
+    return this.screenWithAnsiBody(
+      {
+        title: "",
+        lines,
+        prompt: "> ",
+        inputMode: "line",
+      },
+      {
+        bodyIr: renderStoredBodyToIr(mode.conference.welcomeBody),
+        insertAfterLine: Math.max(0, lines.length - 1),
+      },
+    );
   }
 
   private renderWelcomeEditTitle(mode: ModeWelcomeEditTitle): ScreenModel {
@@ -2219,7 +2225,8 @@ export class BbsUiSession {
     );
     lines.push("-".repeat(Math.min(cols, 80)));
 
-    const previewSource = mode.lines.length > 0 ? mode.lines : mode.existingLines;
+    const previewSource =
+      mode.lines.length > 0 ? mode.lines : mode.existingLines;
     const preview = previewSource.slice(-previewHeight);
     for (const line of preview) {
       for (const wrapped of wrapLine(sanitizePlainText(line), cols))
@@ -2290,15 +2297,18 @@ export class BbsUiSession {
     const menuBody = mode.conference.menuBody ?? "";
     const hasMenuBody = menuBody.trim().length > 0;
     if (hasMenuBody) {
-      return this.screenWithAnsiBody({
-        title: APP_NAME,
-        lines: [],
-        prompt: "> ",
-        inputMode: "line",
-      }, {
-        bodyIr: renderStoredBodyToIr(menuBody),
-        insertAfterLine: 0,
-      });
+      return this.screenWithAnsiBody(
+        {
+          title: APP_NAME,
+          lines: [],
+          prompt: "> ",
+          inputMode: "line",
+        },
+        {
+          bodyIr: renderStoredBodyToIr(menuBody),
+          insertAfterLine: 0,
+        },
+      );
     }
 
     const lines: string[] = [];
@@ -2341,7 +2351,9 @@ export class BbsUiSession {
       lines,
       prompt: "> ",
       inputMode: "line",
-      hints: [`Commands: <num>=Open  I=Menu Edit  E=Menu Design  0=${backLabel}`],
+      hints: [
+        `Commands: <num>=Open  I=Menu Edit  E=Menu Design  0=${backLabel}`,
+      ],
     });
   }
 
@@ -2935,7 +2947,8 @@ export class BbsUiSession {
     const bodyHeight = Math.max(rows - 9, 5);
     const richBody = renderStoredBodyToIr(mode.item.body);
     const richLines = richBody.filter(
-      (node): node is Extract<ScreenNode, { type: "line" }> => node.type === "line",
+      (node): node is Extract<ScreenNode, { type: "line" }> =>
+        node.type === "line",
     );
     const pages = chunk(richLines, bodyHeight);
     const totalPages = Math.max(pages.length, 1);
@@ -2963,16 +2976,19 @@ export class BbsUiSession {
 
     lines.push("-".repeat(Math.min(cols, 80)));
 
-    return this.screenWithAnsiBody({
-      title: APP_NAME,
-      lines,
-      prompt: "> ",
-      inputMode: "line",
-      hints: ["Commands: N=Next page  P=Prev page  0=Back"],
-    }, {
-      bodyIr: pages[pageIndex] ?? [],
-      insertAfterLine: lines.length - 1,
-    });
+    return this.screenWithAnsiBody(
+      {
+        title: APP_NAME,
+        lines,
+        prompt: "> ",
+        inputMode: "line",
+        hints: ["Commands: N=Next page  P=Prev page  0=Back"],
+      },
+      {
+        bodyIr: pages[pageIndex] ?? [],
+        insertAfterLine: lines.length - 1,
+      },
+    );
   }
 
   private renderLink(mode: ModeLink): ScreenModel {
