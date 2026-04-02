@@ -44,9 +44,18 @@ model SessionEventRequest {
   input: string;
 }
 
-model SessionEventResponse {
+model SessionEventScreenResponse {
+  kind: "screen";
   screen: ScreenModel;
 }
+
+model SessionEventAcceptedResponse {
+  kind: "accepted";
+}
+
+alias SessionEventResponse =
+  | SessionEventScreenResponse
+  | SessionEventAcceptedResponse;
 
 model DeleteSessionResponse {
   ok: boolean;

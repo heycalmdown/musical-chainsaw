@@ -162,12 +162,26 @@ components:
         input:
           type: string
     SessionEventResponse:
-      type: object
-      required:
-        - screen
-      properties:
-        screen:
-          $ref: '#/components/schemas/ScreenModel'
+      oneOf:
+        - type: object
+          required:
+            - kind
+            - screen
+          properties:
+            kind:
+              type: string
+              enum:
+                - screen
+            screen:
+              $ref: '#/components/schemas/ScreenModel'
+        - type: object
+          required:
+            - kind
+          properties:
+            kind:
+              type: string
+              enum:
+                - accepted
 servers:
   - url: https://api.kson.live
     description: Public Gateway

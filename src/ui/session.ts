@@ -6,7 +6,7 @@ import type {
   PostSummary,
 } from "../domain";
 import { APP_NAME, CONFERENCE_MANAGE_SCREEN_TITLE } from "../app-meta";
-import type { ScreenModel } from "../protocol";
+import type { ScreenModel, SessionEventResponse } from "../protocol";
 import type { BbsDb } from "../db";
 import type { SerializedSessionState } from "../session-store";
 import {
@@ -486,7 +486,32 @@ export class BbsUiSession {
     });
   }
 
-  async handleEvent(inputRaw: string): Promise<ScreenModel> {
+  private shouldAcceptWithoutRender(inputRaw: string): boolean {
+    const inputTrimmed = inputRaw.trim();
+    if (inputTrimmed === "." || inputTrimmed === "0") return false;
+
+    switch (this.mode.kind) {
+      case "welcomeEditBody":
+      case "menuDesignBody":
+      case "menuEditPageBody":
+      case "menuAddPageBody":
+      case "writeBody":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  async handleEvent(inputRaw: string): Promise<SessionEventResponse> {
+    const shouldAccept = this.shouldAcceptWithoutRender(inputRaw);
+    const screen = await this.handleEventScreen(inputRaw);
+    if (shouldAccept) {
+      return { kind: "accepted" };
+    }
+    return { kind: "screen", screen };
+  }
+
+  private async handleEventScreen(inputRaw: string): Promise<ScreenModel> {
     const inputTrimmed = inputRaw.trim();
     const cmd = inputTrimmed.toUpperCase();
     const exitSession = () =>

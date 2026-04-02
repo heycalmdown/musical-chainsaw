@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { BbsDb } from "../db";
 import type { Board, Conference, ConferenceMenuItem, Post, PostSummary } from "../domain";
+import type { SessionEventResponse } from "../protocol";
 import { BbsUiSession } from "./session";
 
 const rootConference: Conference = {
@@ -58,7 +59,7 @@ function unexpected(name: string): never {
   throw new Error(`Unexpected db call: ${name}`);
 }
 
-function createFakeDb(): BbsDb {
+function createFakeDb(overrides: Partial<BbsDb> = {}): BbsDb {
   return {
     listConferences: async () => [],
     getConference: async () => null,
@@ -88,32 +89,38 @@ function createFakeDb(): BbsDb {
     close: async () => undefined,
     getPool: () => unexpected("getPool"),
     getSchemaName: () => "public",
+    ...overrides,
   };
+}
+
+function expectScreen(result: SessionEventResponse) {
+  assert.equal(result.kind, "screen");
+  return result.screen;
 }
 
 async function openPostsSession(timeZone?: string): Promise<BbsUiSession> {
   const session = new BbsUiSession(createFakeDb());
   await session.handleHello({ user: "kei", timeZone });
-  await session.handleEvent("");
-  await session.handleEvent("1");
+  expectScreen(await session.handleEvent(""));
+  expectScreen(await session.handleEvent("1"));
   return session;
 }
 
 test("posts and post detail render in the session time zone", async () => {
   const session = await openPostsSession("Asia/Seoul");
 
-  const postsScreen = await session.handleEvent("");
+  const postsScreen = expectScreen(await session.handleEvent(""));
   assert.ok(
     postsScreen.lines.some((line) => line.includes("(kei, 2026-04-01 09:00)")),
   );
 
-  const postScreen = await session.handleEvent("R 1");
+  const postScreen = expectScreen(await session.handleEvent("R 1"));
   assert.ok(postScreen.lines.includes("Date: 2026-04-01 09:00"));
 });
 
 test("invalid time zone falls back to UTC formatting", async () => {
   const session = await openPostsSession("Invalid/Zone");
-  const postScreen = await session.handleEvent("R 1");
+  const postScreen = expectScreen(await session.handleEvent("R 1"));
 
   assert.ok(postScreen.lines.includes("Date: 2026-04-01 00:00"));
 });
@@ -123,7 +130,59 @@ test("updated time zone persists through serialize and deserialize", async () =>
   session.setTerminalContext({ timeZone: "America/Los_Angeles" });
 
   const restored = BbsUiSession.deserialize(createFakeDb(), session.serialize());
-  const postScreen = await restored.handleEvent("R 1");
+  const postScreen = expectScreen(await restored.handleEvent("R 1"));
 
   assert.ok(postScreen.lines.includes("Date: 2026-03-31 17:00"));
+});
+
+test("write body line input is accepted without returning a new screen", async () => {
+  let createPostCalls = 0;
+  const session = new BbsUiSession(
+    createFakeDb({
+      createPost: async () => {
+        createPostCalls += 1;
+        return "post-2";
+      },
+    }),
+  );
+
+  await session.handleHello({ user: "kei" });
+  expectScreen(await session.handleEvent(""));
+  expectScreen(await session.handleEvent("1"));
+  expectScreen(await session.handleEvent("W"));
+  expectScreen(await session.handleEvent("title"));
+
+  const accepted = await session.handleEvent("body line");
+  assert.deepEqual(accepted, { kind: "accepted" });
+  assert.equal(createPostCalls, 0);
+
+  const completed = expectScreen(await session.handleEvent("."));
+  assert.ok(completed.toast?.includes("Posted."));
+  assert.equal(createPostCalls, 1);
+});
+
+test("welcome body line input is accepted without returning a new screen", async () => {
+  let updatedBody: string | null = null;
+  const session = new BbsUiSession(
+    createFakeDb({
+      updateConferenceWelcome: async ({ body }) => {
+        updatedBody = body;
+      },
+      getConference: async (conferenceId: string) =>
+        conferenceId === rootConference.id
+          ? { ...rootConference, welcomeTitle: "Updated", welcomeBody: updatedBody ?? "" }
+          : null,
+    }),
+  );
+
+  await session.handleHello({ user: "kei" });
+  expectScreen(await session.handleEvent("E"));
+  expectScreen(await session.handleEvent("Updated"));
+
+  const accepted = await session.handleEvent("line 1");
+  assert.deepEqual(accepted, { kind: "accepted" });
+
+  const completed = expectScreen(await session.handleEvent("."));
+  assert.ok(completed.toast?.includes("Welcome updated."));
+  assert.equal(updatedBody, "line 1");
 });

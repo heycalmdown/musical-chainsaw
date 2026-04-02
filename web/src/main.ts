@@ -190,9 +190,11 @@ async function main(): Promise<void> {
           },
         );
 
-        applyScreen(res.screen);
+        if (res.kind === "screen") {
+          applyScreen(res.screen);
+        }
 
-        if (shouldExit(res.screen)) {
+        if (res.kind === "screen" && shouldExit(res.screen)) {
           sessionId = null;
           setConnected(false);
           draft = "";

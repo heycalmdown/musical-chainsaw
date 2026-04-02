@@ -118,8 +118,8 @@ type SerializedSessionState = {
 1. `sessions` 테이블에서 세션을 조회합니다.
 2. 만료된 세션이면 삭제 후 `404 Session not found`로 처리합니다.
 3. `BbsUiSession.deserialize()`로 UI 상태를 복원합니다.
-4. `handleEvent(input)`를 실행해 다음 화면을 계산합니다.
-5. 종료 화면이면 세션을 삭제합니다.
+4. `handleEvent(input)`를 실행해 `screen | accepted` 이벤트 결과를 계산합니다.
+5. `kind === "screen"` 이고 종료 화면이면 세션을 삭제합니다.
 6. 종료가 아니면 `expectedVersion` 조건으로 세션을 갱신합니다.
 7. 충돌이 나면 최대 3회까지 다시 읽고 재처리합니다.
 
@@ -207,12 +207,12 @@ class BbsUiSession {
   serialize(): SerializedSessionState;
   static deserialize(db: BbsDb, state: SerializedSessionState): BbsUiSession;
   handleHello(payload: HelloPayload): Promise<ScreenModel>;
-  handleEvent(input: string): Promise<ScreenModel>;
+  handleEvent(input: string): Promise<SessionEventResponse>;
 }
 ```
 
 세션 저장소는 UI를 이해하지 않고 직렬화된 상태만 보관합니다. 실제 화면 전이 규칙은 `BbsUiSession`에 집중됩니다.
-클라이언트는 서버가 반환한 `ScreenModel` 전체 스냅샷을 지우고 다시 그리지 않고, 각 응답을 transcript 블록으로 터미널 하단에 이어 붙입니다.
+클라이언트는 서버가 반환한 `kind: "screen"` 응답만 렌더하고, `kind: "accepted"` 는 세션 상태 갱신만 반영합니다.
 
 ## 환경 변수
 

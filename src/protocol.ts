@@ -32,9 +32,14 @@ export type SessionEventRequest = {
   timeZone?: string;
 };
 
-export type SessionEventResponse = {
-  screen: ScreenModel;
-};
+export type SessionEventResponse =
+  | {
+      kind: "screen";
+      screen: ScreenModel;
+    }
+  | {
+      kind: "accepted";
+    };
 
 export type ApiErrorResponse = {
   error: { code: string; message: string };

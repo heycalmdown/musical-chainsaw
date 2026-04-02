@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { getAppContext } from "./app-context";
+import { getAppContext, type AppContext } from "./app-context";
 import { BbsUiSession } from "./ui/session";
 import { ConflictError } from "./session-store";
 import type {
@@ -202,10 +202,15 @@ export async function handleCreateSessionRequest(
 export async function handleSessionEventRequest(
   sessionIdRaw: unknown,
   body: unknown,
+  deps: {
+    getAppContext?: () => Promise<AppContext>;
+  } = {},
 ): Promise<SessionEventResponse> {
   const sessionId = requireSessionId(sessionIdRaw);
   const req = parseSessionEventRequest(body);
-  const { db, sessionStore, sessionTtlMs } = await getAppContext();
+  const { db, sessionStore, sessionTtlMs } = await (
+    deps.getAppContext ?? getAppContext
+  )();
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
     const sessionData = await sessionStore.get(sessionId);
@@ -223,10 +228,10 @@ export async function handleSessionEventRequest(
       cols: term.cols,
       timeZone: req.timeZone,
     });
-    const screen = await uiSession.handleEvent(req.input);
+    const eventResult = await uiSession.handleEvent(req.input);
 
     try {
-      if (shouldExit(screen)) {
+      if (eventResult.kind === "screen" && shouldExit(eventResult.screen)) {
         await sessionStore.delete(sessionId);
       } else {
         await sessionStore.update({
@@ -238,7 +243,7 @@ export async function handleSessionEventRequest(
         });
       }
 
-      return { screen };
+      return eventResult;
     } catch (error) {
       if (error instanceof ConflictError && attempt < MAX_RETRIES - 1) {
         continue;
