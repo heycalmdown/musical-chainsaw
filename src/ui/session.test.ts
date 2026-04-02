@@ -161,6 +161,19 @@ test("write body line input is accepted without returning a new screen", async (
   assert.equal(createPostCalls, 1);
 });
 
+test("write body screen renders a single separator line", async () => {
+  const session = new BbsUiSession(createFakeDb());
+
+  await session.handleHello({ user: "kei" });
+  expectScreen(await session.handleEvent(""));
+  expectScreen(await session.handleEvent("1"));
+  expectScreen(await session.handleEvent("W"));
+  const bodyScreen = expectScreen(await session.handleEvent("title"));
+
+  assert.equal(bodyScreen.lines.filter((line) => /^-+$/.test(line)).length, 1);
+  assert.equal(bodyScreen.prompt, "");
+});
+
 test("welcome body line input is accepted without returning a new screen", async () => {
   let updatedBody: string | null = null;
   const session = new BbsUiSession(

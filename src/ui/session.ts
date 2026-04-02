@@ -2226,12 +2226,10 @@ export class BbsUiSession {
         lines.push(wrapped);
     }
 
-    lines.push("-".repeat(Math.min(cols, 80)));
-
     return this.screen({
       title: APP_NAME,
       lines,
-      prompt: "> ",
+      prompt: "",
       inputMode: "multiline",
     });
   }
@@ -2280,12 +2278,10 @@ export class BbsUiSession {
     const preview = mode.lines.slice(-previewHeight);
     for (const line of preview) lines.push(sanitizePlainText(line));
 
-    lines.push("-".repeat(Math.min(cols, 80)));
-
     return this.screen({
       title: APP_NAME,
       lines,
-      prompt: "> ",
+      prompt: "",
       inputMode: "multiline",
     });
   }
@@ -2576,12 +2572,10 @@ export class BbsUiSession {
         lines.push(wrapped);
     }
 
-    lines.push("-".repeat(Math.min(cols, 80)));
-
     return this.screen({
       title: APP_NAME,
       lines,
-      prompt: "> ",
+      prompt: "",
       inputMode: "multiline",
     });
   }
@@ -2724,12 +2718,10 @@ export class BbsUiSession {
         lines.push(wrapped);
     }
 
-    lines.push("-".repeat(Math.min(cols, 80)));
-
     return this.screen({
       title: APP_NAME,
       lines,
-      prompt: "> ",
+      prompt: "",
       inputMode: "multiline",
     });
   }
@@ -2930,12 +2922,10 @@ export class BbsUiSession {
         lines.push(wrapped);
     }
 
-    lines.push("-".repeat(Math.min(cols, 80)));
-
     return this.screen({
       title: APP_NAME,
       lines,
-      prompt: "> ",
+      prompt: "",
       inputMode: "multiline",
     });
   }

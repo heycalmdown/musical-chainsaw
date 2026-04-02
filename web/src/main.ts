@@ -36,8 +36,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 function normalizePrompt(prompt: string | undefined): string {
   if (typeof prompt !== "string") return DEFAULT_PROMPT;
-  const p = sanitizePlainText(prompt);
-  return p.length > 0 ? p : DEFAULT_PROMPT;
+  return sanitizePlainText(prompt);
 }
 
 function writeSoftClear(term: Terminal): void {
@@ -67,7 +66,7 @@ function appendScreen(term: Terminal, screen: ScreenModel): void {
 }
 
 function shouldShowPrompt(screen: ScreenModel): boolean {
-  return !(
+  return normalizePrompt(screen.prompt).length > 0 && !(
     Array.isArray(screen.actions) &&
     screen.actions.some((action) => action.type === "exit")
   );
@@ -151,6 +150,11 @@ async function main(): Promise<void> {
     return { cols: DEFAULT_COLS, rows: nextRows };
   };
 
+  const getTerminalSize = () => ({
+    cols: DEFAULT_COLS,
+    rows: term.rows,
+  });
+
   const setConnected = (connected: boolean) => {
     appEl.classList.toggle("connected", connected);
     nicknameInput.disabled = connected;
@@ -186,7 +190,7 @@ async function main(): Promise<void> {
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ input: line, ...resizeTerminal(), timeZone }),
+            body: JSON.stringify({ input: line, ...getTerminalSize(), timeZone }),
           },
         );
 
@@ -224,6 +228,7 @@ async function main(): Promise<void> {
 
     try {
       setConnected(true);
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       const terminalSize = resizeTerminal();
       const res = await fetchJson<CreateSessionResponse>("/chol/sessions", {
         method: "POST",
