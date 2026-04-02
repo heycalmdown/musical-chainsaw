@@ -110,8 +110,9 @@ test("posts and post detail render in the session time zone", async () => {
   const session = await openPostsSession("Asia/Seoul");
 
   const postsScreen = expectScreen(await session.handleEvent(""));
+  assert.ok(postsScreen.lines.includes("번호 이름         날짜  제목"));
   assert.ok(
-    postsScreen.lines.some((line) => line.includes("(kei, 2026-04-01 09:00)")),
+    postsScreen.lines.some((line) => line.includes("1    kei          04-01 Hello")),
   );
 
   const postScreen = expectScreen(await session.handleEvent("R 1"));

@@ -330,6 +330,85 @@ function sanitizePlainText(value: string): string {
   return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x1b]/g, "");
 }
 
+function isFullWidthCodePoint(codePoint: number): boolean {
+  return (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x1f300 && codePoint <= 0x1f64f) ||
+      (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd))
+  );
+}
+
+function codePointWidth(codePoint: number): number {
+  if (
+    codePoint === 0 ||
+    codePoint < 0x20 ||
+    (codePoint >= 0x7f && codePoint < 0xa0) ||
+    (codePoint >= 0x300 && codePoint <= 0x36f) ||
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+    (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+  ) {
+    return 0;
+  }
+
+  return isFullWidthCodePoint(codePoint) ? 2 : 1;
+}
+
+function textCellWidth(value: string): number {
+  let width = 0;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (typeof codePoint !== "number") continue;
+    width += codePointWidth(codePoint);
+  }
+  return width;
+}
+
+function padCellEnd(value: string, width: number): string {
+  const safe = sanitizePlainText(value);
+  const pad = Math.max(0, width - textCellWidth(safe));
+  return safe + " ".repeat(pad);
+}
+
+function truncateCell(value: string, width: number): string {
+  const safe = sanitizePlainText(value);
+  if (width <= 0) return "";
+  if (textCellWidth(safe) <= width) return safe;
+  if (width <= 2) return ".".repeat(width);
+
+  const ellipsis = "..";
+  const limit = width - ellipsis.length;
+  let out = "";
+  let used = 0;
+  for (const char of safe) {
+    const charWidth = textCellWidth(char);
+    if (used + charWidth > limit) break;
+    out += char;
+    used += charWidth;
+  }
+  return out + ellipsis;
+}
+
+function formatPostListDate(iso: string, timeZone: string): string {
+  const formatted = formatDate(iso, timeZone);
+  const match = /^(\d{4})-(\d{2})-(\d{2}) /.exec(formatted);
+  if (!match) return truncateCell(formatted, 5);
+  return `${match[2]}-${match[3]}`;
+}
+
 function wrapLine(line: string, width: number): string[] {
   if (width <= 0) return [line];
   if (line.length <= width) return [line];
@@ -2814,6 +2893,16 @@ export class BbsUiSession {
   }
 
   private renderPosts(mode: ModePosts): ScreenModel {
+    const cols = Math.min(this.ctx.cols, 80);
+    const numberWidth = 4;
+    const nameWidth = 12;
+    const dateWidth = 5;
+    const gap = " ";
+    const titleWidth = Math.max(
+      8,
+      cols - numberWidth - nameWidth - dateWidth - gap.length * 3,
+    );
+
     const lines: string[] = [];
     lines.push(`user=${sanitizePlainText(this.ctx.user)}`);
     lines.push("");
@@ -2821,17 +2910,32 @@ export class BbsUiSession {
       `[Conference: ${sanitizePlainText(mode.conference.name)}] [Board: ${sanitizePlainText(mode.board.name)}] Page ${mode.pageState.page}`,
     );
     lines.push("");
+    lines.push(
+      `${padCellEnd("번호", numberWidth)}${gap}${padCellEnd("이름", nameWidth)}${gap}${padCellEnd("날짜", dateWidth)}${gap}제목`,
+    );
+    lines.push("-".repeat(cols));
 
     if (mode.posts.length === 0) {
       lines.push("(no posts)");
     } else {
       mode.posts.forEach((post, index) => {
-        const displayNo = String(index + 1);
+        const displayNo = padCellEnd(String(index + 1), numberWidth);
+        const author = padCellEnd(
+          truncateCell(post.author, nameWidth),
+          nameWidth,
+        );
+        const createdAt = padCellEnd(
+          formatPostListDate(post.createdAt, this.ctx.timeZone),
+          dateWidth,
+        );
+        const title = truncateCell(post.title, titleWidth);
         lines.push(
-          `${displayNo}\t${sanitizePlainText(post.title)}\t(${sanitizePlainText(post.author)}, ${formatDate(post.createdAt, this.ctx.timeZone)})`,
+          `${displayNo}${gap}${author}${gap}${createdAt}${gap}${title}`,
         );
       });
     }
+
+    lines.push("-".repeat(cols));
 
     return this.screen({
       title: APP_NAME,
