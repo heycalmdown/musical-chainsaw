@@ -1,6 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { Terminal } from "@xterm/xterm";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { APP_NAME } from "../../src/app-meta";
 import type {
   CreateSessionResponse,
@@ -203,8 +204,7 @@ async function main(): Promise<void> {
     convertEol: true,
     cursorStyle: "block",
     cursorBlink: true,
-    fontFamily:
-      "ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontFamily: "'NeoDGM Code', ui-monospace, Menlo, Monaco, Consolas, monospace",
     fontSize: 21,
     theme: {
       background: "#1900b8",
@@ -212,6 +212,11 @@ async function main(): Promise<void> {
     },
   });
   term.open(terminalEl);
+  term.loadAddon(
+    new WebLinksAddon((_event, uri) => {
+      window.open(uri, "_blank", "noopener,noreferrer");
+    }),
+  );
 
   let sessionId: string | null = null;
   let lastScreen: ScreenModel | null = null;

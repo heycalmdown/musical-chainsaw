@@ -12,6 +12,15 @@
   --danger: #ff6675;
 }
 
+@font-face {
+  font-family: "NeoDGM Code";
+  src:
+    url("/fonts/neodgm_code.woff2") format("woff2"),
+    url("/fonts/neodgm_code.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+}
+
 * {
   box-sizing: border-box;
 }
