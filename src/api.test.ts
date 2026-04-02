@@ -163,7 +163,7 @@ test("session event API returns screen for line-mode transitions", async () => {
   );
 
   assert.equal(result.kind, "screen");
-  assert.ok(result.screen.lines.includes("Enter title (0 to cancel):"));
+  assert.equal(result.screen.prompt, "Enter title (0 to cancel): ");
 });
 
 test("session event API returns accepted for multiline body input", async () => {

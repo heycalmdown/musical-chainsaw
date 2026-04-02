@@ -161,6 +161,18 @@ test("write body line input is accepted without returning a new screen", async (
   assert.equal(createPostCalls, 1);
 });
 
+test("write title uses the title prompt instead of the default selection prompt", async () => {
+  const session = new BbsUiSession(createFakeDb());
+
+  await session.handleHello({ user: "kei" });
+  expectScreen(await session.handleEvent(""));
+  expectScreen(await session.handleEvent("1"));
+  const titleScreen = expectScreen(await session.handleEvent("W"));
+
+  assert.equal(titleScreen.prompt, "Enter title (0 to cancel): ");
+  assert.ok(!titleScreen.lines.includes("Enter title (0 to cancel):"));
+});
+
 test("write body screen renders a single separator line", async () => {
   const session = new BbsUiSession(createFakeDb());
 

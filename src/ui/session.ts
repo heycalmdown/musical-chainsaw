@@ -2887,13 +2887,11 @@ export class BbsUiSession {
     lines.push(
       `[Conference: ${sanitizePlainText(mode.conference.name)}] [Board: ${sanitizePlainText(mode.board.name)}] Write Post`,
     );
-    lines.push("");
-    lines.push("Enter title (0 to cancel):");
 
     return this.screen({
       title: APP_NAME,
       lines,
-      prompt: "> ",
+      prompt: "Enter title (0 to cancel): ",
       inputMode: "line",
     });
   }

@@ -25,6 +25,77 @@ function sanitizePlainText(value: string): string {
   return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\x1b]/g, "");
 }
 
+function splitGraphemes(value: string): string[] {
+  if (typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+    return Array.from(segmenter.segment(value), (segment) => segment.segment);
+  }
+  return Array.from(value);
+}
+
+function isFullWidthCodePoint(codePoint: number): boolean {
+  return (
+    codePoint >= 0x1100 &&
+    (
+      codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x1f300 && codePoint <= 0x1f64f) ||
+      (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+    )
+  );
+}
+
+function codePointWidth(codePoint: number): number {
+  if (
+    codePoint === 0 ||
+    codePoint < 0x20 ||
+    (codePoint >= 0x7f && codePoint < 0xa0) ||
+    (codePoint >= 0x300 && codePoint <= 0x36f) ||
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+    (codePoint >= 0xfe20 && codePoint <= 0xfe2f)
+  ) {
+    return 0;
+  }
+
+  return isFullWidthCodePoint(codePoint) ? 2 : 1;
+}
+
+function graphemeWidth(value: string): number {
+  let width = 0;
+  for (const char of value) {
+    const codePoint = char.codePointAt(0);
+    if (typeof codePoint !== "number") continue;
+    width += codePointWidth(codePoint);
+  }
+  return Math.max(width, 1);
+}
+
+function removeLastGrapheme(value: string): {
+  next: string;
+  removedWidth: number;
+} | null {
+  const graphemes = splitGraphemes(value);
+  const removed = graphemes.pop();
+  if (!removed) return null;
+
+  return {
+    next: graphemes.join(""),
+    removedWidth: graphemeWidth(removed),
+  };
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch("https://api.kson.live" + url, init);
   const text = await res.text();
@@ -298,10 +369,12 @@ async function main(): Promise<void> {
       if (ch === "\u007f" || ch === "\b") {
         if (!acceptBufferedInput) continue;
         if (draft.length === 0) continue;
-        draft = draft.slice(0, -1);
-        term.write("\r\x1b[2K");
-        term.write(currentPrompt);
-        term.write(draft);
+        const removed = removeLastGrapheme(draft);
+        if (!removed) continue;
+        draft = removed.next;
+        const backspace = "\b".repeat(removed.removedWidth);
+        const erase = " ".repeat(removed.removedWidth);
+        term.write(backspace + erase + backspace);
         continue;
       }
 
