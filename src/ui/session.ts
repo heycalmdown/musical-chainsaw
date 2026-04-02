@@ -1788,10 +1788,12 @@ export class BbsUiSession {
         return this.render();
       }
 
-      const readMatch = /^R(?:\s+(\d+))?$/i.exec(inputTrimmed);
+      const readMatch =
+        /^R(?:\s+(\d+))?$/i.exec(inputTrimmed) ??
+        /^(\d+)$/.exec(inputTrimmed);
       if (readMatch) {
         const indexText = readMatch[1] ?? "";
-        if (!indexText) {
+        if (!indexText && /^R$/i.test(inputTrimmed)) {
           this.toast = "Usage: R <no>";
           return this.render();
         }
@@ -1829,7 +1831,7 @@ export class BbsUiSession {
         return this.render();
       }
 
-      this.toast = "Commands: N, P, R <no>, W, 0";
+      this.toast = "Commands: N, P, <no>, R <no>, W, 0";
       return this.render();
     }
 
@@ -2942,7 +2944,7 @@ export class BbsUiSession {
       lines,
       prompt: "> ",
       inputMode: "line",
-      hints: ["Commands: N=Next  P=Prev  R <no>=Read  W=Write  0=Menu"],
+      hints: ["Commands: N=Next  P=Prev  <no>/R <no>=Read  W=Write  0=Menu"],
     });
   }
 

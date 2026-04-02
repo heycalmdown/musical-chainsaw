@@ -119,6 +119,13 @@ test("posts and post detail render in the session time zone", async () => {
   assert.ok(postScreen.lines.includes("Date: 2026-04-01 09:00"));
 });
 
+test("posts screen allows reading by bare post number", async () => {
+  const session = await openPostsSession("Asia/Seoul");
+  const postScreen = expectScreen(await session.handleEvent("1"));
+
+  assert.ok(postScreen.lines.includes("Title: Hello"));
+});
+
 test("invalid time zone falls back to UTC formatting", async () => {
   const session = await openPostsSession("Invalid/Zone");
   const postScreen = expectScreen(await session.handleEvent("R 1"));
