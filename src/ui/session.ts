@@ -6,7 +6,7 @@ import type {
   PostSummary,
 } from "../domain";
 import { APP_NAME, CONFERENCE_MANAGE_SCREEN_TITLE } from "../app-meta";
-import type { ScreenModel, SessionEventResponse } from "../protocol";
+import type { ScreenKind, ScreenModel, SessionEventResponse } from "../protocol";
 import type { BbsDb } from "../db";
 import type { SerializedSessionState } from "../session-store";
 import {
@@ -2022,6 +2022,10 @@ export class BbsUiSession {
     return toast;
   }
 
+  private currentScreenKind(): ScreenKind {
+    return this.mode.kind;
+  }
+
   private screen(screen: BaseScreenModel): ScreenModel {
     const toast = this.takeToast();
     const merged: BaseScreenModel & { toast?: string } = toast
@@ -2029,6 +2033,7 @@ export class BbsUiSession {
       : screen;
     const lines = stripUserBanner(merged.lines);
     return {
+      screenKind: this.currentScreenKind(),
       ...merged,
       lines,
       prompt: merged.prompt,
@@ -2068,7 +2073,13 @@ export class BbsUiSession {
     ansiIr.push(...linesToIr(after));
     if (merged.hints?.length) ansiIr.push(...linesToIr(merged.hints));
 
-    return { ...merged, lines, prompt: merged.prompt, ansiIr };
+    return {
+      screenKind: this.currentScreenKind(),
+      ...merged,
+      lines,
+      prompt: merged.prompt,
+      ansiIr,
+    };
   }
 
   private shouldClearOnRender(): boolean {

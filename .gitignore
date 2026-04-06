@@ -12,3 +12,4 @@ var
 *.jks
 .aws/
 manifest/cdk.context.json
+.playwright-cli

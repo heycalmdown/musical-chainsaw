@@ -9,7 +9,7 @@
     "build:web": "vite build",
     "preview:web": "vite preview",
     "db:setup": "tsx src/db-setup.ts",
-    "test": "tsx --test src/ansi-screen.test.ts src/api.test.ts src/app-context.test.ts src/config.test.ts src/db.test.ts src/dsql.test.ts src/ui/session.test.ts",
+    "test": "tsx --test src/ansi-screen.test.ts src/api.test.ts src/app-context.test.ts src/config.test.ts src/db.test.ts src/dsql.test.ts src/menu-hotspot.test.ts src/ui/session.test.ts",
     "tsp": "tsp compile ./typespec/faas"
   },
   "devDependencies": {

@@ -2,7 +2,44 @@ import type { StoredRichScreen } from "./ansi-screen";
 
 export type ScreenAction = { type: "exit" };
 
+export type ScreenKind =
+  | "conferenceManage"
+  | "conferenceAdd"
+  | "conferenceRename"
+  | "welcome"
+  | "welcomeEditTitle"
+  | "welcomeEditBody"
+  | "menu"
+  | "menuDesignTitle"
+  | "menuDesignBody"
+  | "menuEdit"
+  | "menuEditLabel"
+  | "menuEditDisplayNo"
+  | "menuEditDisplayType"
+  | "menuEditBoardSelect"
+  | "menuEditConferenceSelect"
+  | "menuEditLink"
+  | "menuEditPageTitle"
+  | "menuEditPageBody"
+  | "menuAddType"
+  | "menuAddLabel"
+  | "menuAddBoardSelect"
+  | "menuAddConferenceSelect"
+  | "menuAddPageTitle"
+  | "menuAddPageBody"
+  | "menuAddLink"
+  | "boardManage"
+  | "boardAdd"
+  | "boardRename"
+  | "posts"
+  | "post"
+  | "writeTitle"
+  | "writeBody"
+  | "page"
+  | "link";
+
 export type ScreenModel = {
+  screenKind: ScreenKind;
   title: string;
   lines: string[];
   ansiIr: StoredRichScreen;

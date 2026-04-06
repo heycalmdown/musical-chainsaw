@@ -106,6 +106,20 @@ async function openPostsSession(timeZone?: string): Promise<BbsUiSession> {
   return session;
 }
 
+test("welcome enter opens the menu screen", async () => {
+  const session = new BbsUiSession(createFakeDb());
+
+  const welcomeScreen = await session.handleHello({ user: "kei" });
+  assert.equal(welcomeScreen.prompt, "> ");
+
+  const menuScreen = expectScreen(await session.handleEvent(""));
+  assert.equal(menuScreen.prompt, "> ");
+  assert.ok(
+    menuScreen.lines.some((line) => line.includes("[Conference: Root]")),
+  );
+  assert.ok(menuScreen.lines.some((line) => line.includes("1) General")));
+});
+
 test("posts and post detail render in the session time zone", async () => {
   const session = await openPostsSession("Asia/Seoul");
 

@@ -139,11 +139,13 @@ body {
   height: 100%;
   background: var(--bg);
   padding-left: 36px;
+  touch-action: manipulation;
 }
 
 .terminal .xterm,
 .terminal .xterm-viewport,
 .terminal .xterm-screen,
-.terminal .composition-view {
+.terminal .composition-view,
+.terminal .xterm-helper-textarea {
   background: var(--bg) !important;
 }

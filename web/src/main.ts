@@ -9,6 +9,7 @@ import type {
   SessionEventResponse,
 } from "../../src/protocol";
 import { renderRichScreenToAnsi } from "../../src/ansi-screen";
+import { findMenuHotspots, findPostsHotspots, type ScreenHotspot } from "../../src/menu-hotspot";
 
 const DEFAULT_ROWS = 24;
 const DEFAULT_COLS = 80;
@@ -173,6 +174,13 @@ function appendScreen(term: Terminal, screen: ScreenModel): void {
   }
 }
 
+function plainLinesFromScreen(screen: ScreenModel): string[] {
+  if (screen.lines.length > 0) return screen.lines.slice();
+  return screen.ansiIr
+    .filter((node) => node.type === "line")
+    .map((node) => node.spans.map((span) => span.text).join(""));
+}
+
 function shouldShowPrompt(screen: ScreenModel): boolean {
   return normalizePrompt(screen.prompt).length > 0 && !(
     Array.isArray(screen.actions) &&
@@ -185,6 +193,19 @@ function shouldExit(screen: ScreenModel): boolean {
     Array.isArray(screen.actions) &&
     screen.actions.some((a) => a.type === "exit")
   );
+}
+
+function hotspotsFromScreen(screen: ScreenModel): ScreenHotspot[] {
+  const lines = plainLinesFromScreen(screen);
+
+  switch (screen.screenKind) {
+    case "menu":
+      return findMenuHotspots(lines);
+    case "posts":
+      return findPostsHotspots(lines);
+    default:
+      return [];
+  }
 }
 
 async function main(): Promise<void> {
@@ -269,6 +290,72 @@ async function main(): Promise<void> {
     cols: DEFAULT_COLS,
     rows: term.rows,
   });
+
+  const setTerminalCursor = (value: string) => {
+    terminalEl.style.cursor = value;
+
+    const selectors = [
+      ".xterm",
+      ".xterm-screen",
+      ".xterm-rows",
+      ".xterm-helper-textarea",
+    ];
+    for (const selector of selectors) {
+      const el = terminalEl.querySelector(selector) as HTMLElement | null;
+      if (el) el.style.cursor = value;
+    }
+  };
+
+  const getCellMetrics = () => {
+    const screenEl = terminalEl.querySelector(".xterm-screen") as HTMLElement | null;
+    if (!screenEl) return null;
+    const screenRect = screenEl.getBoundingClientRect();
+    const cellWidth = screenRect.width / DEFAULT_COLS;
+    const cellHeight = screenRect.height / Math.max(term.rows, 1);
+
+    if (!(cellWidth > 0) || !(cellHeight > 0)) return null;
+    return { screenRect, cellWidth, cellHeight };
+  };
+
+  const findClickedMenuInput = (
+    event: Pick<MouseEvent, "clientX" | "clientY">,
+  ): string | null => {
+    if (!lastScreen) return null;
+    const metrics = getCellMetrics();
+    if (!metrics) return null;
+
+    const col = Math.floor((event.clientX - metrics.screenRect.left) / metrics.cellWidth);
+    const line = Math.floor((event.clientY - metrics.screenRect.top) / metrics.cellHeight);
+    if (col < 0 || col >= DEFAULT_COLS || line < 0 || line >= term.rows) return null;
+
+    const lines = plainLinesFromScreen(lastScreen);
+    const hotspots = hotspotsFromScreen(lastScreen);
+    const hotspot = hotspots.find((item) => {
+      if (item.line !== line) return false;
+      const startCol = textWidth(lines[item.line]?.slice(0, item.start) ?? "");
+      const endCol = textWidth(lines[item.line]?.slice(0, item.end) ?? "");
+      return col >= startCol && col < endCol;
+    });
+    return hotspot?.input ?? null;
+  };
+
+  const submitLine = (line: string) => {
+    if (!sessionId || processing) return;
+
+    const draftWidth = textWidth(draft);
+    if (draftWidth > 0) {
+      term.write(
+        moveCursorLeft(draftWidth) +
+          " ".repeat(draftWidth) +
+          moveCursorLeft(draftWidth),
+      );
+    }
+
+    draft = "";
+    cursor = 0;
+    term.write(line + "\r\n");
+    enqueue(line);
+  };
 
   const setConnected = (connected: boolean) => {
     appEl.classList.toggle("connected", connected);
@@ -399,7 +486,36 @@ async function main(): Promise<void> {
     if (e.key === "Enter") void connect();
   });
 
-  terminalEl.addEventListener("mousedown", () => term.focus());
+  terminalEl.addEventListener(
+    "pointermove",
+    (event) => {
+      if (event.pointerType === "touch") return;
+      setTerminalCursor(findClickedMenuInput(event) ? "pointer" : "");
+    },
+    true,
+  );
+
+  terminalEl.addEventListener(
+    "pointerleave",
+    () => {
+      setTerminalCursor("");
+    },
+    true,
+  );
+
+  terminalEl.addEventListener(
+    "pointerdown",
+    (event) => {
+      term.focus();
+      const input = findClickedMenuInput(event);
+      if (!input) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.pointerType !== "mouse") setTerminalCursor("");
+      submitLine(input);
+    },
+    true,
+  );
 
   term.onData((data) => {
     if (!sessionId) return;
@@ -410,11 +526,7 @@ async function main(): Promise<void> {
     for (const ch of normalizedData) {
       if (ch === "\n") {
         if (!acceptBufferedInput) continue;
-        const line = draft;
-        draft = "";
-        cursor = 0;
-        term.write("\r\n");
-        enqueue(line);
+        submitLine(draft);
         continue;
       }
 
